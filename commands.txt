@@ -1,0 +1,579 @@
+
+
+https://segotl2596.srv.volvo.com/users/login  -RHS6
+ 
+
+https://rhnsat.srv.volvo.com/rhn/YourRhn.do -RHS 5
+ 
+
+
+grub2-set-default 1
+cat /boot/grub2/grubenv |grep saved
+saved_entry=1
+
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+
+PE:
+=====
+SAM ->Printers & Plotters ->LP Spooler -> Save/Restore Spooler Configuration.
+'Save' will store the data in /var/sam/lp 
+
+Vasudeva Reddy, Challa 2:10 PM: 
+lpstat -v | grep -i  queuename 
+Vasudeva Reddy, Challa 2:11 PM: 
+lpadmin -p mxmdlj37 -v socket://10.101.229.81:9100 -E 
+Vasudeva Reddy, Challa 2:13 PM: 
+lpstat -v | grep -i  queuename
+
+
+lpadmin -p mxmdlj37 -v socket://10.101.229.81:9100 -E
+You can do it with the following command:
+
+:66,70s/^/#
+for comment, and for uncomment:
+
+:66,70s/^#/
+
+https://fridpucms03.ssn.entsvcs.net  - usecase. 
+
+/opt/hp/hps
+/opt/hps/inventory/bin/ddmi_restart.sh 
+/opt/hps/inventory/bin/post_install.sh  
+
+/usr/sbin/useradd -g hpatlsys -c "Krushna,SAP Admin,jorge.ramirez-carrasco@hpe.com,manager Marc Fowler" -d /home/hpatlsys/qzj682 -p 'cli6htG0TEGE6' -s /usr/bin/ksh qzj682
+/usr/sbin/userdel zz19mb
+
+grep -i EMS /var/adm/syslog/syslog.log
+
+*ACTION find /var/log/apache2 -type f \( -name 'https_access_airbus.log*' \) -a ! \( -name '*.gz' -o -name '*.bz2*' \) -mtime +5  -exec gzip {} \;
+
+*ACTION find /var/log/audit -type f \( -name 'audit.log*' \) -a ! \( -name '*.gz' \) -mtime +10 -exec gzip {} \;
+
+ovdeploy -cmd "ntpq -p" -n ustlssas172.tesoropetroleum.com
+
+#!/bin/bash
+uptime;uname -r;uname -a;df -h;df -h |wc -l;cat /etc/fstab; cat /etc/fstab |wc -l;netstat -nr;netstat -nr |wc -l ;ifconfig -a;pvs;vgs;lvs;lsscsi;cat /etc/hosts;cat /etc/hosts|wc -l
+
+
+===============================
+
+[root@rsroldp1 ~]# more /tmp/monitoringscript.sh
+#!/bin/bash
+DATE=$(date "+%Y-%m-%d %H:%M")
+CPU_USAGE=$(sar -u 1 5)&&
+MEM=$(sar -r 1 5)&&
+LOAD=$(sar -q 1 5)&&
+IO=$(sar -b 1 5)
+recipients="TMS-Development@ryder.com rmctsunix@dxc.com bsamal@dxc.com"
+echo "$CPU_USAGE $MEM $LOAD $IO" | mailx -s "Current CPU/MEM/LOAD/IO Report $DATE" $recipients
+[root@rsroldp1 ~]#
+
+==========================
+umount /u01
+e2fsck -fyvc /dev/mapper/vgora-u01vol
+mount /u01
+dumpe2fs -h /dev/mapper/vgora-u01vol |tee -a /tmp/02241926-dumpe2fs.out
+
+============
+cmgetconf -v |grep -i vgPCAtmp --> cluster 
+cat /proc/mounts | egrep -v "tmpfs|proc|sysfs|devtmpfs|devpts|usbfs" | awk '{print $2 " " $4}' | cut -d , -f1 |grep -w ro |awk '{print $1}'
+
+cmd /c start /w "C:\\Program Files\\PuTTY\\putty.exe" "C:\\Program Files\\PuTTY\\putty.exe" -telnet %h %p && echo %m && pause > nul"
+
+/opt/nimsoft/probes/system/processe 
+conf file
+processes.cfg 
+
+Commands we would use for extension :
+lvextend –l  11698112 /dev/vgPBIdata/lvsapdata1
+fsadm -F vxfs –b 11698112M /oracle/PBI/sapdata1
+df -ThP /usr/sap/trans_PSM
+lvs -o +devices | grep -i lv_trans
+vgs vgPSMarch
+lvchange -s y /dev/vgprod1/sldapplv - change the lv allocation from PVG-strict to strict.
+lvchange -r N /dev/vgD3Asrv/lvsap_d3a - to disable BBR - bad block relocation.  
+
+cd /var/opt/OV/conf/OpC -  df_mon.cfg
+	/UXMONbroker
+./	 psmon
+
+lvextend -m 1 /dev/vg00/lvpatchdepot
+Best Shore ITO India GOC Delphi UAA Unix <itodoindiadelphiuaaunix@hpe.com> - user creation
+eds-linux-patch -asic -m 4Q2016  - patching
+lvsync /dev/vg00/lvol4
+
+# end of vol_mon.cfg
+############################################################################
+Disable_Lv_No_Check = yes
+[root@auszswsu003 OpC]# pwd
+/var/opt/OV/conf/OpC 
+
+
+ldapadmin.sh
+
+
+=========================================================================
+tosap404 :-
+--------------- 
+# cmhaltpkg PFS
+
+tosap407 :-
+------------ 
+# cmrunpkg PFS
+# cmmodpkg -e PFS 
+check the running package before halting it using #cmviewcl 
+# cmhaltpkg  PFQ
+# cmhaltpkg  PFW
+# cmhaltpkg  PHL
+# cmhaltpkg  MFW
+
+e) Start a package manually on a local node:
+/usr/sbin/cmrunpkg –v package
+/usr/sbin/cmmodpkg –e package
+/usr/sbin/cmviewcl
+To move the package from one node to another, first halt the package on the current node and then start it on the other adoptive node.
+/usr/sbin/cmhaltpkg package1
+Verify package with :
+/usr/sbin/cmviewcl
+/usr/sbin/cmrunpkg –n node2 package1
+/usr/sbin/cmmodpkg –e package1
+/usr/sbin/cmviewcl
+=================
+
+fs0:
+cd /EFI/HPUX/
+HPUX.EFI 
+# cmhaltnode  (on server tosap407) cmhaltnode -n server
+# shutdown –hy now  (on server tosap407)
+
+
+
+/sys/class/net
+dmesg |grep eth - status change
+
+/usr/sbin/dmesg | tail
+cat /var/adm/syslog/syslog.log|grep -i target
+ioscan -P health -H 0/7/1/0.0x51402ec000f351e4
+
+strings /etc/lvmtab
+ioscan -fnC disk
+	
+tosap814:(/root/home/root)(root)#ioscan -fnC fc
+Class     I  H/W Path  Driver S/W State   H/W Type     Description
+================================================================
+fc        0  0/3/1/0   fcd   CLAIMED     INTERFACE    HP AB378-60101      4Gb Single Port PCI/PCI-X Fibre Channel Adapter (FC Port 1)
+                      /dev/fcd0
+fc        1  0/7/1/0   fcd   CLAIMED     INTERFACE    HP AB378-60101      4Gb Single Port PCI/PCI-X Fibre Channel Adapter (FC Port 1)
+                      /dev/fcd1
+
+
+fcmsutil /dev/fcd0
+
+echo 1 > /sys/block/sdo/device/delete 
+
+26      vgdisplay -v
+27      vgdisplay -v |more
+28      ioscan -fnHC disk
+29      ioscan -fnNC disk
+30      ls -l /dev/rdisk/disk117
+31      scsimgr lun_map -D /dev/rdisk/disk117
+32      ioscan -fnC disk |grep -i NO_HW
+33      ioscan -fnC disk /dev/rdisk/disk117
+34      diskinfo /dev/rdisk/disk117
+35      ioscan -fnNC disk /dev/rdisk/disk117
+36      pvdisplay /dev/disk/disk117
+37      vgdisplay -v /dev/oraPXQvg01 |grep -i stale
+38      vgdisplay -v /dev/oraPXQvg01
+39      scsimgr -p lun_map -D /dev/rdisk/disk117
+40      strings /etc/lvmtab
+41      historty
+
+ /usr/lbin/modprpw -k username
+ 
+ 
+========================================================================
+[root@ustlsosas102 archive]# pvcreate --uuid "xXIRFC-dLK5-F44j-WKKl-Gb7l-I8nV-FYzf0U" --restorefile /etc/lvm/archive/vg02_00015-931665855.vg /dev/mapper/mpath21
+  Couldn't find device with uuid xXIRFC-dLK5-F44j-WKKl-Gb7l-I8nV-FYzf0U.
+  Writing physical volume data to disk "/dev/mapper/mpath21"
+  Physical volume "/dev/mapper/mpath21" successfully created
+pvcreate --uuid "xXIRFC-dLK5-F44j-WKKl-Gb7l-I8nV-FYzf0U" --restorefile /etc/lvm/archive/vg02_00015-931665855.vg /dev/mapper/mpath21
+vgcfgrestore vg02
+lvchange -ay /dev/vg02/osprovvol
+
+========================================================================
+lvdisplay|awk  '/LV Name/{n=$3} /Block device/{d=$3; sub(".*:","dm-",d); print d,n;}' 
+
+====
+ovconfchg -ns sec.core.auth -set MANAGER h3gomu01.omc.hp.com 
+
+ovconfchg -ns sec.cm.client -set CERTIFICATE_SERVER h3gomu01.omc.hp.com 
+
+ovconfchg -ns sec.core.auth -set MANAGER_ID ef26091c-8629-7550-0135-ad4c88abe087
+
+After that, please do ovc –kill, ovc –start.
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+for i in `/usr/sbin/ioscan -funC fc|grep -i dev`
+do
+Path=`fcmsutil $i |grep "Hardware Path" |awk '{print $5}'`
+State=`fcmsutil $i |grep "Driver state" |awk '{print $4}'`
+Nodev=`ioscan -fnH $Path |grep CLAIMED |wc -l`
+echo "`uname -n`   $Path   $i      $State       $Nodev"
+done
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+check_filesystem_size.ksh
+#!/bin/ksh 
+for i in `df -k | grep /u0 `
+do
+   # If any filesystem has less than 100k, issue an alert
+   freespace=echo $i | awk '{ print $4 }'
+   if [ $freespace -lt 100 ]
+   then
+      mail -s "On server $HOSTNAME filesystem $i has less then 100K of free space ($freespace)" joe.user@company.com < df -k | grep "/u0" 
+   fi
+done
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+==============
+ps -eo pmem,pcpu,vsize,pid,cmd | sort -k 1 -nr | head -5
+
+====OVO scopeux process is not running ====================================
+opcagt -status
+opcagt -cleanstart --if not resolved then follow the below steps.
+
+/opt/perf/bin/ovpa stop
+/opt/perf/bin/midaemon -T
+/opt/perf/bin/ttd -k
+/opt/OV/bin/ovc -kill
+	
+rm -rf /var/opt/perf/datafiles/log*
+rm -rf /var/opt/OV/log/coda.txt
+rm -rf /var/opt/OV/datafiles/coda*
+rm -rf /var/opt/OV/tmp/OpC/*
+rm /var/opt/OV/tmp/OpC/*
+rm /var/opt/OV/tmp/public/OpC/*
+rm /var/opt/OV/tmp/*.pid
+/opt/perf/bin/ovpa start
+/opt/OV/bin/ovc -start 
+
+========================
+
+If still unable to fix it then execute below set of commands.
+1.)	/opt/OV/bin/opcagt –stop
+2.)	/opt/OV/bin/opcagt –kill
+3.)	/opt/perf/bin/ovpa stop all
+4.)	/opt/OV/bin/opcagt –status 
+      (Make sure all the process are stopped.)
+/opt/perf/bin/midaemon –T
+/opt/perf/bin/ttd –k 
+5.)	(Check for any hung OVO processes)
+ps -ef | grep -i opc
+ps -ef | grep -i ov
+ps -ef | grep -i coda
+(If you find any please kill them)
+6.)	Remove the temperory files.
+rm -rf /var/opt/OV/tmp/OpC/*q
+rm -rf /var/opt/OV/tmp/OpC/*df
+rm -rf /var/opt/OV/tmp/OpC/*p
+rm -rf /var/opt/OV/datafiles/coda*
+rm -rf /var/opt/OV/tmp/ovcd*
+rm -rf /var/opt/OV/tmp/public/OpC/*
+7.)	Check o/p of below command and make sure those process are not running.
+ps -ef | grep -i midaemon
+ If running try /opt/perf/bin/midaemon –T
+ps -ef | grep -i ttd
+ If running try /opt/perf/bin/ttd –k
+ps -ef | grep -i perfd
+ps -ef | grep -i scopeux
+If any process/daemon still running then kill it. (kill -9 PID)
+8.)	Backup all the files from /var/opt/perf/datafiles directory and preserve those in a different location. (to /tmp)
+rm /var/opt/perf/datafiles/log* (remove log files only)
+9.)	rm /var/opt/perf/alarmdef
+10.)	 cp /opt/perf/newconfig/alarmdef /var/opt/perf/alarmdef
+11.)	 /opt/perf/bin/ovpa start all
+12.)	 /opt/OV/bin/opcagt –start 
+
+
+ovconfchg -ns eaagt.lic.mgrs -set general_licmgr 192.57.82.27
+ovconfchg -ns eaagt -set OPC_PRIMARY_MGR usahcomla100.ameramer.corp.eds.com
+ovconfchg -ns sec.core.auth -set MANAGER 192.57.82.27
+ovconfchg -ns sec.core.auth -set MANAGER_ID c0abab2c-e637-7542-16b5-ac522545a97d
+ovconfchg -ns sec.cm.client -set CERTIFICATE_SERVER 192.57.82.27
+ovc -kill
+ovc -start 
+ovcert -certreq
+
+
+/opt/OV/bin/ovconfget | grep -i manager=	
+====================================================================================================
+
+H3G procedure
+
+Doc Attached 
+
+VC3 
+Jet Outage
+Backup chk
+Prechks (netstat , ifconfig ,df , ntpq , nfs,sendmail)
+SVAC
+Root password
+Appn Stop
+Snapshot
+Sanity reboot
+Patching
+VMware tool upgrade
+App Start
+=======================================================
+init=/bin/bash
+having the root fs bad checksum
+umount /
+/sbin/e2fsck /dev/vg00/lv00
+mount -0 remount,rw /	
+passwd root
+new password :
+confirm password:
+init 3
+
+
+====================
+| Maximum File System Size 
+------------------------------------------------------ 
+Block Size | In sectors | In bytes 
+------------------------------------------------------ 
+1024 bytes | 4,294,967,039 | approximately 4 TB 
+2048 bytes | 8,589,934,078 | approximately 8 TB 
+4096 bytes | 17,179,868,156 | approximately 16 TB 
+8192 bytes | 34,359,736,312 | approximately 32 TB 
+
+ 
+hpsa-l2@hpe.com 
+
+HPSA WG in SM AMS
+W-INCSSP-HPSA-SUPPORT-TEAM  
+======================================================================
+
+HP SMART ARRAY CLI COMMANDS ON ESXI
+Show configuration
+/opt/hp/hpssacli/bin/hpssacli ctrl all show config
+
+Controller status
+/opt/hp/hpssacli/bin/hpssacli ctrl all show status
+
+Show detailed controller information for all controllers
+/opt/hp/hpssacli/bin/hpssacli ctrl all show detail
+
+Show detailed controller information for controller in slot 0
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 show detail
+
+Rescan for New Devices
+/opt/hp/hpssacli/bin/hpssacli rescan
+
+Physical disk status
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 pd all show status
+
+Show detailed physical disk information
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 pd all show detail
+
+Logical disk status
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 ld all show status
+
+View Detailed Logical Drive Status
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 ld 2 show
+
+Create New RAID 0 Logical Drive
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 create type=ld drives=1I:1:2 raid=0
+
+Create New RAID 1 Logical Drive
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 create type=ld drives=1I:1:1,1I:1:2 raid=1
+
+Create New RAID 5 Logical Drive
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 create type=ld drives=1I:1:1,1I:1:2,2I:1:6,2I:1:7,2I:1:8 raid=5
+
+Delete Logical Drive
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 ld 2 delete
+
+Add New Physical Drive to Logical Volume
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 ld 2 add drives=2I:1:6,2I:1:7
+
+Add Spare Disks
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 array all add spares=2I:1:6,2I:1:7
+
+Enable Drive Write Cache
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 modify dwc=enable
+
+Disable Drive Write Cache
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 modify dwc=disable
+
+Erase Physical Drive
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 pd 2I:1:6 modify erase
+
+Turn on Blink Physical Disk LED
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 ld 2 modify led=on
+
+Turn off Blink Physical Disk LED
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 ld 2 modify led=off
+
+Modify smart array cache read and write ratio (cacheratio=readratio/writeratio)
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 modify cacheratio=100/0
+
+Enable smart array write cache when no battery is present (No-Battery Write Cache option)
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 modify nbwc=enable
+
+Disable smart array cache for certain Logical Volume
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 logicaldrive 1 modify arrayaccelerator=disable
+
+Enable smart array cache for certain Logical Volume
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 logicaldrive 1 modify arrayaccelerator=enable
+
+Enable SSD Smart Path
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 array a modify ssdsmartpath=enable
+
+Disable SSD Smart Path
+/opt/hp/hpssacli/bin/hpssacli ctrl slot=0 array a modify ssdsmartpath=disable
+
+http://ecmoml01.omc.hp.com/EMEA-Solution-Repository/MGT-Management_Infrastructure/OVO_Agent_Packages/HPOA_11.14_installation_instruction.txt 
+
+497  multipath -ll
+  498  grep -i multipath /var/log/messages | tail -1 | cut -c1-6 | sed -e 's/^/DateLast:/'
+  499  grep -i multipath /var/log/messages | sed -n '/Aug 24/,$p' | head -1 | cut -c1-6 | sed -e 's/^/DateEvent:/'
+  500  sed -n '/Aug 24/,$p' /var/log/messages | egrep "multipath|mount" |  grep -v " rpc."
+  501  multipath -ll
+  
+  [root@al1vxoimdr002 na]# rpm -ivh oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64.rpm
+warning: oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64.rpm: Header V3 RSA/SHA256 Signature, key ID ec551f03: NOKEY
+error: Failed dependencies:
+        compat-libcap1 is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        compat-libstdc++-33 is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        gcc is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        gcc-c++ is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        kernel-uek is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        libaio-devel is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        libstdc++-devel is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+        xorg-x11-utils is needed by oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+[root@al1vxoimdr002 na]#
+
+rpm -ivh compat-lib*
+rpm -ivh --nodeps libmpc-1.0.1-3.el7.x86_64.rpm
+rpm -ivh --nodeps cpp-4.8.5-11.el7.x86_64.rpm
+rpm -ivh --nodeps libmpc-1.0.1-3.el7.x86_64.rpm
+rpm -ivh libXxf*
+rpm -ivh libstdc++-4.8.5-11.el7.x86_64.rpm
+rpm -ivh --nodeps libstdc++-devel-4.8.5-11.el7.x86_64.rpm
+rpm -ivh libgcc-4.8.5-11.el7.x86_64.rpm
+rpm -ivh --nodeps gcc*
+rpm -ivh --nodeps xorg-x11-utils-7.5-14.el7.x86_64.rpm
+rpm -ivh libaio-devel-0.3.109-13.el7.x86_64.rpm
+rpm -ivh --nodeps  oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64.rpm
+
+rpm -ivh compat-lib*;rpm -ivh --nodeps libmpc-1.0.1-3.el7.x86_64.rpm;rpm -ivh --nodeps cpp-4.8.5-11.el7.x86_64.rpm;rpm -ivh --nodeps libmpc-1.0.1-3.el7.x86_64.rpm;rpm -ivh libXxf*;rpm -ivh libstdc++-4.8.5-11.el7.x86_64.rpm;rpm -ivh --nodeps libstdc++-devel-4.8.5-11.el7.x86_64.rpm;rpm -ivh --nodeps gcc*;rpm -ivh --nodeps xorg-x11-utils-7.5-14.el7.x86_64.rpm;rpm -ivh libaio-devel-0.3.109-13.el7.x86_64.rpm;rpm -ivh --nodeps  oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64.rpm;rpm -qa |egrep "oracle|compat*|libcap"
+
+[root@al1vxoimdr002 ~]# rpm -qa |egrep "oracle|compat*|libcap"
+libcap-2.22-8.el7.x86_64
+compat-libcap1-1.10-7.el7.x86_64
+libcap-ng-0.7.5-4.el7.x86_64
+compat-libstdc++-33-3.2.3-72.el7.x86_64
+polkit-pkla-compat-0.1-4.el7.x86_64
+oracle-rdbms-server-12cR1-preinstall-1.0-6.el7.x86_64
+[root@al1vxoimdr002 ~]#
+
+Set setboot in hpux:
+=======================
+casts106:/root# ioscan -fnC disk /dev/dsk/c6t5d0s2
+Class     I  H/W Path  Driver S/W State   H/W Type     Description
+==================================================================
+disk     20  0/4/1/0.0.0.5.0  sdisk   CLAIMED     DEVICE       HP      DG072A8B54
+                      /dev/dsk/c6t5d0     /dev/dsk/c6t5d0s1   /dev/dsk/c6t5d0s2   /dev/dsk/c6t5d0s3   /dev/rdsk/c6t5d0    /dev/rdsk/c6t5d0s1  /dev/rdsk/c6t5d0s2  /dev/rdsk/c6t5d0s3
+casts106:/root# 
+
+setboot -p <primary hw path>
+setboot -a <secondary HW path>
+ioscan -m dsf /dev/disk/disk36_p2 
+ioscan -m dsf /dev/disk/disk44_p2 
+
+ioscan -fnC disk /dev/dsk/c6t5d0s2
+
+===============================
+
+1) copy the pub key
+ vi u519000_rsa_gk.pub
+2) ssh-keygen -i -f u522606_rsa_gk.pub  >  /usr/local/umf/PKD/u522606_rsa_gk.pub
+add the uid@dummy at the end
+u522606@dummy
+3)run the user management framework
+# usrmgt
+choos option 2 : Add user
+choos option 6 : Grant role to user
+choose option 16 :  Deploy keys of user   
+===================  
+
+
+vi u522606_rsa_gk.pub
+
+R_ORA_UNX_DBA_ADM  
+
+ovdeploy -cmd "ntpq -p" -n cammssas017.mcbcmrk.msv.ssn.entsvcs.net
+oot@usalvomll116# ovdeploy -cmd "ntpq -p" -n cammssas017.mcbcmrk.msv.ssn.entsvcs.net
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
+*tortce-ntp.omc. 138.35.151.110   2 u 1040 1024  377    2.779   -0.980   1.770
++swatce-ntp.omc. 138.35.151.46    2 u  857 1024  377   31.234   -0.524   2.479
+
+root@usalvomll116#
+
+
+
+1) copy the pub key
+ vi u519000_rsa_gk.pub
+2) ssh-keygen -i -f u529093_rsa_gk.pub  >  /usr/local/umf/PKD/u529093_rsa_gk.pub
+add the uid@dummy at the end
+u522606@dummy
+3)run the user management framework
+# usrmgt
+choos option 2 : Add user
+choos option 6 : Grant role to user
+choose option 16 :  Deploy keys of user 
+
+
+for host in `ls /sys/class/scsi_host/`;do echo "- - -" >/sys/class/scsi_host/${host}/scan; done  
+# for host in `ls /sys/class/fc_host/`; do echo "1" >/sys/class/fc_host/${host}/issue_lip; done
+# echo "c t l" >  /sys/class/scsi_host/hosth/scan
+where
+
+h is the HBA number
+c is the channel on the HBA
+t is the SCSI target ID
+l is the LUN.
+
+
+userid
+d0ntint
+
+root
+chqngethis
+
+==============================
+
+grep user details from /etc/passwd and /etc/shadow
+
+[root@vlpr271 ~]# grep -i u520747 /etc/passwd
+u520747:x:36386:100:Tejas Satish Shetty:/home/u520747:/usr/local/umf/bin/usershell
+[root@vlpr271 ~]# grep -i u520747 /etc/shadow
+u520747:!!:17668:0:99999:7:::
+
+go to /usr/local/umf/tunnels/ directory and edit below files and put the user entry,
+
+[root@vlpr271 ~]# cd /usr/local/umf/tunnels/
+[root@vlpr271 tunnels]# vi etc/passwd -insert the /etc/password entry here
+[root@vlpr271 tunnels]# vi etc/shadow -insert /etc/shadow entry here
+[root@vlpr271 tunnels]# vi etc/group -add user name in last of fuse,umf and sftp filed
+[root@vlpr271 tunnels]# pwd
+/usr/local/umf/tunnels
+[root@vlpr271 tunnels]# 
+follow this 
+ 
+=============
+hpvmstatus
+hpvmstart -P 
