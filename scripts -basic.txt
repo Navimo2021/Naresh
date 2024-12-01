@@ -1,0 +1,3885 @@
+=~=~=~=~=~=~=~=~=~=~=~= PuTTY log 2024.12.01 18:23:45 =~=~=~=~=~=~=~=~=~=~=~=
+cat troubleshoot.sh
+#!/bin/bash
+
+########################################################
+#                                                      #
+# Author: Dineshkumar kadirvelan (kadirveland@hcl.com) #
+#                                                      #
+########################################################
+
+#The script has following functionality
+
+#collects information about the server 
+#Check critical components
+#check Performance of the server
+
+
+
+
+#Define colors
+
+RED=`tput setaf 1`
+RESET=`tput sgr0`
+GREEN=`tput setaf 2`
+YELLOW=`tput setaf 3`
+BLUE=`tput setaf 4`
+BOLD=`tput bold`
+
+#Check User is root
+
+USER=`whoami`
+
+if ! [[ $USER = root ]]; then
+echo "Run $0 as root user"
+exit 1
+else
+#Collect System Information
+
+echo -e "################################################################## \n"
+
+echo -e "       ${BOLD}SYSTEM INFORMATION${RESET}    \n"
+HOST=`facter fqdn`
+VENDOR=`facter manufacturer`
+SERVER_MODEL=`facter productname`
+SERIAL_NUMBER=`facter serialnumber`
+CPU_MODEL=`facter processor0`
+VERSION=`facter lsbdistdescription`
+KERNEL=`facter kernelrelease`
+CPU=`lscpu | grep -w "^CPU(s)" | awk -F ":" '{print $2}' | awk -F " " '{print $1}'`
+MEMORY=`facter memorysize`
+SWAP=`facter swapsize`
+SELINUX=`facter selinux_current_mode`
+LAST_REBOOT=`who -b | awk -F " " '{print $3,$4}'`
+echo "${YELLOW}HOSTNAME${RESET}:$HOST"
+echo "${YELLOW}VENDOR${RESET}:$VENDOR"
+echo "${YELLOW}SERVER_MODEL${RESET}:$SERVER_MODEL"
+echo "${YELLOW}SERIAL_NUMBER${RESET}:$SERIAL_NUMBER"
+echo "${YELLOW}CPU_MODEL${RESET}:$CPU_MODEL"
+echo "${YELLOW}OS${RESET}:$VERSION"
+echo "${YELLOW}KERNEL${RESET}:$KERNEL"
+echo "${YELLOW}CPU COUNT${RESET}:$CPU"
+echo "${YELLOW}MEMORY${RESET}:$MEMORY"
+echo "${YELLOW}SWAP${RESET}:$SWAP"
+echo "${YELLOW}SELINUX MODE${RESET}:$SELINUX"
+echo -e "${YELLOW}LAST REBOOT${RESET}:$LAST_REBOOT \n"
+
+echo -e "################################################################## \n"
+
+#check uptime of the server
+
+echo  "${BOLD}UPTIME DETAILS${RESET}"
+echo -e "============== \n"
+UP=`facter system_uptime`
+echo -e  "$UP \n"
+
+# Load Average
+echo  "${BOLD}LOAD AVERAGE OF LAST 15 MINUTES${RESET}"
+echo -e "=============================== \n"
+LOAD=`cat /proc/loadavg | awk -F " " '{print $3}'`
+echo -e "Load:$LOAD \n"
+
+#LOAD CHECK
+LOAD1=`cat /proc/loadavg | awk -F " " '{print $3}'| awk -F "." '{print $1}'`
+if [[ $LOAD1 -gt $CPU ]]; then
+ echo -e "${RED}LOAD IS HIGHER${RESET} than amount of CPU cores we have on the server.\n"
+else
+ echo -e "Load is ${GREEN}normal${RESET} \n"
+fi
+
+#Last Patch date and time
+
+echo  "${BOLD}LAST PATCH DATE AND TIME${RESET}"
+echo -e "========================= \n"
+
+RHEL_VERSION=`facter lsbmajdistrelease`
+if [[ $RHEL_VERSION = 7 ]]; then
+ PATCH_DATE_RHEL7=`rpm -qa --last | egrep -w kernel-3* | head -1 | awk  '{print $2,$3,$4,$5,$6,$7}'`
+ echo -e "$PATCH_DATE_RHEL7 \n"
+elif [[ $RHEL_VERSION = 6 ]]; then
+ PATCH_DATE_RHEL6=`rpm -qa --last | egrep -w kernel-2* | head -1 | awk  '{print $2,$3,$4,$5,$6,$7}'`
+ echo -e "$PATCH_DATE_RHEL6 \n"
+fi
+
+
+#Check the NIC status
+
+echo "${BOLD}NIC SPEED AND STATUS${RESET}"
+echo -e "==================== \n"
+facter interfaces > /tmp/nics
+cat /tmp/nics | sed 's/,/ /g' | fmt -1 | grep -v lo > /tmp/device
+NIC=`cat /tmp/device | sed 's/_/:/g'`
+   for i in $NIC
+      do
+        echo  "DEVICE: $i"
+        ethtool $i | egrep -w 'Speed'
+        NIC_STATUS=`ethtool $i| egrep -w "Link detected" | awk -F ":" '{print $2}'| awk -F " " '{print $1}'`
+          if  [[ $NIC_STATUS = yes ]];then
+            echo "        LINK Status:${GREEN}UP$RESET"
+          elif [[ $NIC_STATUS = no ]];then
+           echo -e "        LINK Status:${RED}DOWN$RESET\n"
+          fi
+      done
+
+echo -e "\n"
+
+##IP Details
+
+echo "${BOLD}IP SUBNETMASK MAC DETAILS${RESET}"
+echo -e "========================= \n"
+FILE=/tmp/device
+cat $FILE |
+while read line
+do
+ echo  "DEVICE: $line"
+ IP=`facter ipaddress_$line`
+ SUBNET_MASK=`facter netmask_$line`
+ MAC_ADDRESS=`facter macaddress_$line`
+ MTU_SIZE=`facter mtu_$line`
+ echo -e "IP=$IP SubnetMask=$SUBNET_MASK MacAddress=$MAC_ADDRESS MTU=$MTU_SIZE \n"
+done
+
+#Bonding/Teaming Info
+cat /tmp/device | sed 's/_/:/g' | egrep -i 'bond*|team*' > /tmp/team.txt
+TEAM_INFO=`cat /tmp/team.txt`
+TEAM_FILE=/tmp/team.txt
+if  [[ ! -z $TEAM_INFO ]]; then
+ echo "${BOLD}BONDING/TEAMING DETAILS${RESET}"
+ echo -e "======================= \n"
+ OS_VERS=`facter lsbmajdistrelease`
+ cat ${TEAM_FILE} |
+ while read line
+  do
+     echo -e "${BOLD}$line${RESET} \n"
+     if [[ $OS_VERS = 7 ]]; then
+      TEAM=`teamdctl $line state view`
+      echo -e "$TEAM \n"
+     elif [[ $OS_VERS = 6 ]]; then
+      BOND=`cat /proc/net/bonding/$line`
+      echo -e "$BOND \n"
+     fi
+  done
+fi
+
+
+# Check the status of the Gateway
+
+echo "${BOLD}GATEWAY CHECK${RESET}"
+echo -e "============= \n"
+VAR=`ip r | grep  ^default | awk -F " " '{print $3}'`
+#IP address REGEX
+REGEX="[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
+
+#REGEX CHECK
+if  [[ $VAR =~ $REGEX ]]; then
+IP=${BASH_REMATCH[0]}
+ping -c4 $IP > /dev/null
+if [ ! $? -eq 0 ]; then
+   echo -e "Gateway $VAR ${RED}not reachable${RESET}. Please troubleshoot further. \n"
+ else
+   echo -e "Gateway $VAR ${GREEN}Reachable${RESET} \n"
+fi
+fi
+
+#check DNS resolution
+
+echo  "${BOLD}DNS CHECK${RESET}"
+echo -e "========= \n"
+nslookup ${HOST}
+ if [ $? -eq 0 ]; then
+   echo -e "DNS Resolution is ${GREEN}Success${RESET} \n"
+   else
+   echo -e "DNS Resolution ${RED} Failed ${RESET} \n"
+ fi
+
+
+
+#Check for readonly FS
+
+echo "${BOLD}READONLY FILESYSTEM CHECK${RESET}"
+echo -e "========================== \n"
+READONLY_FS=`cat /proc/mounts | grep ro, | grep -v "tmpfs"`
+if [[ ! -z ${READONLY_FS} ]]; then
+ echo -e "${RED}Readonly Filesystem${RESET} Found \n"
+ echo  "${READONLY_FS}"
+else
+ echo -e "${GREEN}No Readonly Filesystem${RESET} on Server \n"
+fi
+
+
+# check Memory swap and cpu utilisation
+
+echo "${BOLD}MEMORY SWAP AND CPU UTILIZATION${RESET}"
+echo -e "=============================== \n"
+MEM_TOTAL=`cat /proc/meminfo | grep -i MemTotal | awk -F " " '{print $2}'`
+MEM_FREE=`cat /proc/meminfo | grep -i MemFree | awk -F " " '{print $2}'`
+MEM_USED=`cat /proc/meminfo | grep -i MemAvailable | awk -F " " '{print $2}'`
+echo -e "Total Memory=$(expr $MEM_TOTAL / 1024)MB" "Used=$(expr $MEM_USED / 1024)MB" "Free=$(expr $MEM_FREE / 1024)MB \n"
+SWAP_TOTAL=`cat /proc/meminfo | grep -i SwapTotal | awk -F " " '{print $2}'`
+SWAP_FREE=`cat /proc/meminfo | grep -i SwapFree | awk -F " " '{print $2}'`
+SWAP_USED=$(expr $SWAP_TOTAL - $SWAP_FREE)
+echo -e "Total SWAP=$(expr $SWAP_TOTAL / 1024)MB" "Used=$(expr $SWAP_USED / 1024)MB" "Free=$(expr $SWAP_FREE / 1024)MB \n"
+CPU_USER=`top -n 1 | grep -w ^%Cpu | awk -F ":" '{print $2}' | awk -F "," '{print $1,$2,$4,$5,$8}' |awk -F " " '{print $2}'`
+CPU_SYSTEM=`top -n 1 | grep -w ^%Cpu | awk -F ":" '{print $2}' | awk -F "," '{print $1,$2,$4,$5,$8}' |awk -F " " '{print $5}'`
+CPU_IDLE=`top -n 1 | grep -w ^%Cpu | awk -F ":" '{print $2}' | awk -F "," '{print $1,$2,$4,$5,$8}' |awk -F " " '{print $8}'`
+CPU_WAIT=`top -n 1 | grep -w ^%Cpu | awk -F ":" '{print $2}' | awk -F "," '{print $1,$2,$4,$5,$8}' |awk -F " " '{print $11}'`
+CPU_STEAL=`top -n 1 | grep -w ^%Cpu | awk -F ":" '{print $2}' | awk -F "," '{print $1,$2,$4,$5,$8}' |awk -F " " '{print $14}'`
+echo -e "CPU user utilisation=$CPU_USER% CPU system utilisation=$CPU_SYSTEM% CPU free=$CPU_IDLE% \n"
+echo -e "IOWAIT=$CPU_WAIT% CPU STEAL=$CPU_STEAL% \n"
+echo "${RED}NOTE${RESET}: More IO Wait and CPU steal will cause performance issues" 
+echo -e "!!!!Please investigate further if you see more IO wait and CPU steal on server!!!! \n"
+
+# Check NTP sync
+echo "${BOLD}NTP CHECK${RESET}"
+echo -e "=========== \n"
+OS_VERSION=`facter lsbmajdistrelease`
+if [[ $OS_VERSION = 7 ]]; then
+ chronyc sources
+ echo -e "\n"
+ echo "M/S column indicates the mode/state of the source".
+ echo " ^ means a server, = means a peer and # indicates a locally connected reference clock."
+ echo "* indicates the source to which chronyd is current synchronised. + indicates other acceptable sources."
+ echo "? indicates sources to which connectivity has been lost.x indicates a clock which chronyd thinks is is a falseticker."
+ echo -e "~ indicates a source whose time appears to have too much variability. \n"
+ chronyc tracking
+ echo -e "\n"
+else
+ ntpq -pn
+ echo -e "\n"
+ echo "* indicates the source to which chronyd is current synchronised. + indicates other acceptable sources."
+ echo "? indicates sources to which connectivity has been lost.x indicates a clock which chronyd thinks is is a falseticker."
+ echo -e "~ indicates a source whose time appears to have too much variability. \n"
+fi
+
+NTP_SYNC=`ntpstat | grep -w synchronised | awk -F " " '{ print $1}'`
+if [[ ! NTP_SYNC = synchronised ]]; then
+  echo  -e "NTP is ${GREEN}synchronised${RESET} \n"
+else
+  echo -e "NTP is ${RED}not synchronised${RESET} \n"
+fi
+
+
+#Check for HBA Info and status
+
+SERVER=`facter virtual`
+if [[ $SERVER = physical ]]; then
+   echo  "${BOLD}HBA CARD WWN SPEED AND STATUS${RESET}"
+   echo -e "============================= \n"
+   ls /sys/class/fc_host/host* | grep -w "^/sys" | awk -F "/" '{print $5}' | awk -F ":" '{print $1}' > /tmp/hbainfo.txt
+   HBA_INFO="/tmp/hbainfo.txt"
+   cat $HBA_INFO |
+   while read line
+    do
+     echo "$line"
+     HBA_WWN=`cat /sys/class/fc_host/$line/port_name`
+     echo "  wwn:$HBA_WWN"
+     HBA_SPEED=`cat /sys/class/fc_host/$line/speed`
+     echo "  Speed:$HBA_SPEED"
+     HBA_STATUS=`cat /sys/class/fc_host/$line/port_state`
+      if [[ $HBA_STATUS = Online ]]; then
+        echo -e "  Status:${GREEN}$HBA_STATUS${RESET} \n"
+       else
+        echo -e "  Status:${RED}$HBA_STATUS${RESET} \n"
+      fi
+    done
+fi
+
+
+#IPC- Message Queue shared memory  Semaphore check
+
+echo  "${BOLD}IPC - MESSAGE QUEUE, SHARED MEMORY, SEMAPHORE STATUS${RESET}"
+echo  "==================================================== "
+IPC=`ipcs -u`
+echo -e "$IPC \n"
+echo -e "${RED}NOTE${RESET}: Please cross check the maximum limit using the command ipcs -l \n"
+
+#Multipath check
+
+SYSTEM=`facter virtual`
+VERSION=`facter lsbmajdistrelease`
+if [[ $SYSTEM == physical ]] && [[ $VERSION == 7 ]]; then
+  echo  "${BOLD}MULTIPATH CHECK${RESET}"
+  echo -e "=================== \n"
+  MULTIPATH_SERVICE=`systemctl status multipathd.service`
+  echo -e "$MULTIPATH_SERVICE \n"
+  MULTIPATH_CHECK=`multipath -ll`
+  echo -e "List Number of paths \n"
+  echo -e "$MULTIPATH_CHECK \n"
+
+elif [[ $SYSTEM == physical ]] && [[ $VERSION == 6 ]]; then
+  echo  "${BOLD}MULTIPATH CHECK${RESET}"
+  echo -e "======================= \n"
+  MULTIPATH_SERVICE=`service multipathd status`
+  echo -e "$MULTIPATH_SERVICE \n"
+  MULTIPATH_CHECK=`multipath -ll`
+  echo -e "List Number of paths \n"
+  echo -e "$MULTIPATH_CHECK \n"
+fi
+
+
+
+#Display Top process consuming more CPU
+
+CPU_PROCESS=`ps -eo pcpu,pid,user,args | head -1 ; ps -eo pcpu,pid,user,args | sort -nk 1 -r | head -10`
+
+echo -e "${BOLD}TOP 10 PROCESSES CONSUMING CPU${RESET}"
+echo -e "============================== \n"
+echo -e "$CPU_PROCESS \n"
+
+#Check active ( running ) and queued processes
+echo  "${BOLD}Active ( running ) and queued (blocked D-state) processes${RESET}"
+echo -e "========================================================= \n"
+VMSTAT=`vmstat 1 10 > /tmp/vmstat.txt`
+sleep 5
+echo -e " `cat /tmp/vmstat.txt` \n"
+RUNQUEUE_COUNT=`cat /tmp/vmstat.txt | awk 'BEGIN{FS= " "} {print $1 " "  $2}'  | grep -v ^procs | awk 'END{print $1}'`
+BLOCKED_COUNT=`cat /tmp/vmstat.txt | awk 'BEGIN{FS= " "} {print $1 " "  $2}'  | grep -v ^procs | awk 'END{print $2}'`
+echo -e "PROCESSES in RunQueue = $RUNQUEUE_COUNT  ${RED}BLOCKED${RESET} Process = $BLOCKED_COUNT\n"
+# if [[ $RUNQUEUE_COUNT -gt $CPU ]]; then
+   echo "${RED}NOTE${RESET}:If Run queue value is above installed CPU cores,  Please monitor continuously and investigate further."
+   echo "    If Load average is high and no processes are being actively running and if you see more  Blocked process (D State)"
+   echo -e "    then its time to review Storage performance or verification of any OS component like NFS/NIC/HBA etc \n"
+# fi
+QUEUE_PROCESS=`ps -eo stat,pid,user,command | egrep "^STAT|^D|^R"`
+echo -e "$QUEUE_PROCESS \n"
+
+#Display Top processes consuming memory
+
+MEMORY_PROCESS=`ps aux  | awk '{print $6/1024 " MB\t\t" $11}'  | sort -nr | head -10`
+echo -e "${BOLD}TOP 10 PROCESSES CONSUMING MEMORY${RESET}"
+echo -e "================================= \n"
+echo -e "$MEMORY_PROCESS \n"
+
+#Display total number of process running by each users
+
+echo  "${BOLD}TOTAL NUMBER OF PROCESSES RUNNING BY EACH USER${RESET}"
+echo  -e "============================================== \n"
+TOTAL_PROCESS=`ps h -Led -o user | sort | uniq -c | sort -nr`
+echo -e "$TOTAL_PROCESS \n"
+echo "${RED}NOTE${RESET}:Please cross check the user limit in /etc/security/limits.conf file or under /etc/security/limits.d/ directory "
+echo -e "Application may face problem  if the application user has reached its process limit. \n"
+
+#processes/threads actually doing I/O
+
+echo "${BOLD}DISK I/O MONITOR${RESET}"
+echo -e "================ \n"
+rpm -qa | grep iotop
+if [[ ! $? = 0 ]]; then
+ echo -e "Seems iotop package not installed  please install it and then check the statistics \n"
+else
+ echo -e "${BOLD}Displaying  processes/threads actually doing I/O${RESET} \n"
+ echo "column1: Time"
+ echo "column2: Thread ID (TID)"
+ echo "column3: I/O Priority class/level (PRIO)"
+ echo "column4: owner of the thread with TID (USER)"
+ echo "column5: disk read per second (DISK READ)"
+ echo "column6: disk write per second (DISK WRITE)"
+ echo "column7: percentage of time the thread spent while swapping in (SWAPIN)"
+ echo "column8: percentage of time the thread spent waiting on I/O (IO>)"
+ echo -e "column9: command the thread is running (COMMAND) \n"
+ iotop -botqqqk --iter=10 > /tmp/iotop.txt
+ cat /tmp/iotop.txt
+ echo -e "\n"
+fi
+
+
+echo "${BOLD}MONITOR NETWORK TRAFFIC${RESET}"
+echo -e "======================= \n"
+rpm -qa | grep iftop
+if [[ ! $? = 0 ]]; then
+ echo -e "Seems iftop package not installed  please install it and then check the statistics \n"
+else
+facter interfaces > /tmp/nics
+cat /tmp/nics | sed 's/,/ /g' | fmt -1 | grep -v lo > /tmp/device
+# _ check on file
+cat /tmp/device | sed 's/_/:/g' > /tmp/virtnic
+NIC1=/tmp/virtnic
+
+cat $NIC1 |
+while read line
+do
+  echo "DEVICE: $line"
+  iftop -i $line -s 5 -t > /tmp/iftop$line.txt 2>&1
+  cat /tmp/iftop$line.txt
+ done
+fi
+
+fi
+root@segotl0836# ll
+total 40
+-rwxrwxrwx. 1 root root  5830 Jan 20  2020 lvcreate.sh
+-rwxrwxrwx. 1 root root  4858 Jan 16  2020 lvextend.sh
+-rwxr-xr-x. 1 root root  4018 Jul 26  2020 playbook.tar.gz
+drwxr-xr-x. 3 root root    22 Dec  1 18:22 tmp
+-rwxr-xr-x. 1 root root 14290 Jan  3  2020 troubleshoot.sh
+-rwxrwxr-x. 1 root root  1505 May 27  2020 useradd.sh
+root@segotl0836# cat useradd.sh
+#!/bin/bash
+
+###########################################################################
+#                                                                         #
+# Created by Dineshkumar Kadirvelan (kadirveland@hcl.com) on 27-05-2020   #
+#                                                                         #
+###########################################################################
+
+#Script used to create Multiple local users on the server
+
+RED=`tput setaf 1`
+RESET=`tput sgr0`
+GREEN=`tput setaf 2`
+
+FILE_NAME=$1
+if [[ $# -ne 1 ]]; then
+   echo "Usage: $0 <file>"
+   exit 1
+fi
+cat ${1} | awk -F ":" '{print $1 " " $3 " " $4 " " $5}' > /tmp/users
+while IFS=" " read -r line
+do
+echo "$line" > /tmp/userinfo
+USER=`cat /tmp/userinfo | awk -F " " '{print $1}'`
+USER_ID=`cat /tmp/userinfo | awk -F " " '{print $2}'`
+USER_GID=10
+GECOS=`cat /tmp/userinfo | awk -F " " '{print $4 " " $5}'`
+PASSWORD=${USER}@123#
+useradd  -u $USER_ID -g $USER_GID -c "$GECOS" -s /bin/bash $USER
+RESULT=`cat /etc/passwd | grep -i $USER`
+if [[ $? -eq 0 ]]; then
+   echo "${GREEN} User $USER has been created successfully${RESET} "
+else
+   echo "${RED}Oops Something wrong!! $USER not created${RESET}"
+fi
+echo $PASSWORD | passwd --stdin $USER
+cat /etc/security/access.conf | grep -i $USER > /tmp/accesslog
+ACCESS_CONF=`cat /tmp/accesslog`
+if [ -z "${ACCESS_CONF}" ]; then
+# sed -i "/^- : ALL : ALL/i + : $USER : ALL"  /etc/security/access.conf
+  echo "+ : $USER : ALL " >> /etc/security/access.conf
+fi
+done < '/tmp/users'
+
+root@segotl0836# cat lvcreate.sh
+#!/bin/bash
+
+###########################################################################
+#                                                                         #
+# Created by Dineshkumar Kadirvelan (kadirveland@hcl.com) on 13-01-2020   #
+#                                                                         #
+###########################################################################
+
+
+#Define colours
+
+RED=`tput setaf 1`
+RESET=`tput sgr0`
+BOLD=`tput bold`
+GREEN=`tput setaf 2`
+EXIT_STATUS=0
+
+if ! [ $# -gt 0 ]; then
+   echo "USAGE: $0 [-h|--help] [-d|--disk disk1,disk2,disk3..] [-v|--volumegroup vgname]  [-l|--lvname lvname size] [-p|--path mountpath]"
+   exit 1
+else
+while [ $# -gt 0 ]
+do
+  case "$1" in
+        -h|--help )
+              echo "USAGE: $0 [-h|--help] [-d|--disk disk1,disk2,disk3..] [-v|--volumegroup vgname]  [-l|--lvname lvname size] [-p|--path mountpath]"
+              shift
+              exit 2
+              ;;
+         -d|--disk )
+              DISKS=$2
+              echo "$DISKS" > /tmp/disks
+              cat /tmp/disks | sed 's/,/ /g' | fmt -1 > /tmp/diskin
+              DISK=/tmp/diskin
+              cat $DISK |
+              while read line 
+              do
+              lvmdiskscan | grep -w "$line" | awk -F " " '{print $1}' > /tmp/disk
+              if ! [ -s /tmp/disk ]; then
+                   echo "${RED}Disk $line not foundi${RESET}"
+                   exit 3
+              else
+               echo -e "${GREEN}Disk $line found${RESET}. Creating PV.. \n"
+               pvcreate ${line}
+               echo -e "\n"
+               
+              fi
+              done
+              shift
+              shift
+              ;;
+         -v|--volumegroup )
+               VG=$2
+               vgs | grep -w "$2" | awk -F " " '{print $1}' > /tmp/vg
+               if  [ -s /tmp/vg ]; then
+                    echo -e "Volume group exist \n"
+                    EXIT_STATUS=4
+                    break
+               else
+                  cat /tmp/disks | sed 's/,/ /g'  > /tmp/disk_vg
+                  VG_DISK=`cat /tmp/disk_vg`
+                   vgcreate $VG $VG_DISK
+                   if [ "$?" != "0" ]; then
+                     echo "${RED}VolumeGroup not Created, Check disk name given correctly${RESET}"
+                     exit 5
+                   fi
+                   echo -e "\n"
+               fi
+               vgs | grep -w "$2" | awk -F " " '{print $1}' > /tmp/vg
+               shift
+               shift
+               ;;
+          -l|--lvname )
+             LV_NAME=$2
+             SIZE=$3
+             VG=`cat /tmp/vg`
+             FULL_SIZE=100%FREE
+             if [[ ${SIZE} == ${FULL_SIZE} ]]; then
+              lvcreate -l ${SIZE}  -n ${LV_NAME} $VG
+             else
+              lvcreate -L $SIZE -n ${LV_NAME} $VG
+             fi
+             lvs  $VG | grep ${LV_NAME}
+             if [ "$?" != "0" ]; then
+                echo "Logical Volume not Created"
+                exit 6
+             fi
+             mkfs.xfs /dev/mapper/${VG}-${LV_NAME}
+             lvs  $VG | grep ${LV_NAME} | awk -F " " '{print $1}' > /tmp/lv
+             shift
+             shift
+             shift
+             ;;
+           -p|--mountpath )
+             MOUNT_PATH=$2
+             VG=`cat /tmp/vg`
+             LV=`cat /tmp/lv`
+             df -h | grep ${MOUNT_PATH}
+             if [[ $? == 0 ]]; then
+                echo "File system already exist, exiting"
+                exit 6
+             else
+             mkdir -p ${MOUNT_PATH}
+             echo "/dev/mapper/$VG-$LV  ${MOUNT_PATH}  xfs     defaults    0   0" >> /etc/fstab
+             mount ${MOUNT_PATH}
+             echo -e "\n"
+             if [[ $? = 0 ]]; then
+                echo "${GREEN}Filesystem ${MOUNT_PATH} mounted  successfully${RESET}"
+                echo -e "\n"
+                echo -e "Fstab entries Added. Please alter the mount options in fstab and filesystem permissions if required \n"
+
+             else
+                echo "${RED}Oops Something wrong please check further${RESET}"
+             fi
+             fi
+             shift
+             shift
+             exit
+             ;;
+
+
+            * )
+             echo "USAGE: $0 [-h|--help] [-d|--disk disk1,disk2,disk3..] [-v|--volumegroup vgname]  [-l|--lvname lvname size] [-p|--path mountpath]"
+             shift
+             exit 1
+             ;;
+   esac
+done
+fi
+if  ! [[ $EXIT_STATUS -eq 0 ]]; then
+    echo -n "Do you  want to proceed with LV creation Y/N: "
+    read Answer
+CHECK=0
+while [ $CHECK -eq 0 ]
+do
+case "$Answer" in
+ Y|y )
+  echo -e "\n"
+  echo -e "Proceeding with LV creation \n"
+  LV_NAME=$4
+  SIZE=$5
+  MOUNT_PATH=$7
+  VG=`cat /tmp/vg`
+  FULL_SIZE=100%FREE
+  df -h | grep ${MOUNT_PATH}
+  if [[ $? == 0 ]]; then
+     echo "${RED}File system already exist, exiting${RESET}"
+     exit 6
+  fi
+    if [[ ${SIZE} == ${FULL_SIZE} ]]; then
+     lvcreate -l ${SIZE} -n $LV_NAME $VG
+    else
+     lvcreate -L $SIZE -n $LV_NAME $VG
+    fi
+    lvs  $VG | grep $LV_NAME
+    if [ "$?" != "0" ]; then
+    echo "Logical Volume not Created"
+    exit 4
+    fi
+    mkfs.xfs /dev/mapper/${VG}-${LV_NAME}
+    lvs  $VG | grep $LV_NAME | awk -F " " '{print $1}' > /tmp/lv
+    LV=`cat /tmp/lv`
+    echo "/dev/mapper/$VG-$LV  ${MOUNT_PATH}  xfs     defaults    0   0" >> /etc/fstab
+    mkdir -p ${MOUNT_PATH}
+    mount ${MOUNT_PATH}
+    echo -e "\n"
+    if [[ $? = 0 ]]; then
+      echo "${GREEN}Filesystem ${MOUNT_PATH} mounted  successfully${RESET}"
+      echo -e "\n"
+      echo -e "Fstab entries Added. Please alter the mount options in fstab and filesystem permissions if required \n"
+
+    else
+      echo "${RED}Oops Something wrong please check further${RESET}"
+    fi
+    CHECK=1
+    shift
+    shift
+    shift
+    shift
+    shift
+    shift
+    ;;
+  N|n )
+   echo "Exiting....done"
+   CHECK=2
+   ;;
+ esac
+done
+fi
+
+root@segotl0836# cat lvextend.sh
+#!/bin/bash
+
+###########################################################################
+#                                                                         #
+# Created by Dineshkumar Kadirvelan (kadirveland@hcl.com) on 13-01-2020   #
+#                                                                         #
+###########################################################################
+
+
+#Define colours
+
+RED=`tput setaf 1`
+RESET=`tput sgr0`
+BOLD=`tput bold`
+GREEN=`tput setaf 2`
+if ! [ $# -gt 0 ]; then
+     echo "${BOLD}USAGE: $0 [-h|--help] [-d|--disk disk1,disk2...] [-v|--volumegroup vgname] [-l|--lvname size]${RESET} "
+     exit 1
+else
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+        -h|--help )
+              echo "${BOLD}USAGE: $0 [-h|--help] [-d|--disk disk1,disk2..] [-v|--volumegroup vgname] [-l|--lvname  size]${RESET}"
+              shift
+              exit 1
+              ;;
+         -d|--disk )
+              DISKS=$2
+              echo "$DISKS" > /tmp/disks
+              cat /tmp/disks | sed 's/,/ /g' | fmt -1 > /tmp/diskin
+              DISK=/tmp/diskin
+              cat $DISK |
+              while read line
+              do
+              lvmdiskscan | grep -w "$line" | awk -F " " '{print $1}' > /tmp/disk
+              if ! [ -s /tmp/disk ]; then
+                   echo "${RED}Disk $line not found{RESET}"
+                   exit 3
+              else
+               echo -e "Disk ${GREEN}$line${RESET} found. Creating PV.. \n"
+               pvcreate ${line}
+
+              fi
+              done
+              shift
+              shift
+              ;;
+
+           -v|--volumegroup ) 
+              VG=$2
+              cat /tmp/disks | sed 's/,/ /g'  > /tmp/disk_vgex 2> /dev/null
+              VG_EXT=`cat /tmp/disk_vgex`
+              vgs | grep -w "$2" | awk -F " " '{print $1}' > /tmp/vg
+               if ! [ -s /tmp/vg ]; then
+                 echo "${RED}Volume group does not exist${RESET}"
+                 exit 4
+               else
+                 echo -e "${GREEN}Volume group $VG exist${RESET} \n"
+                 vgextend $VG ${VG_EXT} 2> /tmp/vglog | grep -v vgextend
+                 echo -e "\n"
+               fi
+               vgs | grep -w "$2" | awk -F " " '{print $1}' > /tmp/vg
+               shift
+               shift
+               ;;
+           -l | --lvname )
+              
+             LV=$2
+             VG=`cat /tmp/vg`
+             SIZE=$3
+             FULL_SIZE=100%FREE
+             LV_CHECK=`lvs | grep -w "$LV"`
+             if [ -z "${LV_CHECK}" ]; then 
+                echo -e "${RED}Logical Volume $LV does not exist${RESET} \n"
+             else
+              
+             #Semaphore Check
+
+             SEMAPHORE_TOTAL=`ipcs -sl | grep -w "max number of arrays" | awk -F "=" '{print $2}' | awk -F " " '{print $1}'`
+             SEMAPHORE_USED=`ipcs -su | grep -w "used arrays" | awk -F "=" '{print $2}' | awk -F " " '{print $1}'`
+             if [[ $SEMAPHORE_USED -eq $SEMAPHORE_TOTAL ]]; then
+             echo "${RED}Semaphore Array limit Reached. Please increase the semaphore value and then extend the Filesystem${RESET}"
+             exit 1
+             fi
+             
+             #Check the Type of lv
+             LV_TYPE=`lvdisplay -m $VG | grep -i Type | awk -F " " '{print $2}' | uniq` 
+             if [[ $LV_TYPE = mirror ]]; then  
+                echo "${RED}LVM is mirrored, Please break the mirror and do the extension manually${RESET}."
+             elif [[ $LV_TYPE = striped ]]; then
+                echo "${RED}LVM is striped, Please check and do the extension manually${RESET}."
+             elif [[ $LV_TYPE = linear ]]; then
+                echo -e "LVM is Linear. Extending Logical Volume... \n"
+                if [[ ${SIZE} == ${FULL_SIZE} ]]; then
+                    lvextend -l +"${SIZE}" /dev/${VG}/${LV}
+                else
+                    lvextend -L +"$SIZE" /dev/${VG}/${LV}
+                fi
+                if ! [[ $? -eq 0 ]]; then
+                echo -e "\n"
+                echo -e "${RED}LogicalVolume ${LV} not extended, Please check further and do the extension${RESET} \n"
+                exit
+                else 
+                xfs_growfs /dev/${VG}/${LV}
+                echo -e "\n"
+                if [[ $? -eq 0 ]]; then
+                   echo -e "${GREEN}Logical Volume $LV Extended Successfully${RESET} \n"
+                else
+                  echo -e "${RED}Oops Something went wrong. Please Check further${RESET} \n"
+                fi
+                fi
+             fi 
+             fi
+             shift
+             shift
+             shift
+             exit
+             ;;
+                
+           * )
+             echo "${BOLD}USAGE: $0 [-h|--help] [-d|--disk disk1,disk2..] [-v|--volumegroup vgname] [-l|--lvname size]$RESET"
+             shift
+             exit 1
+             ;;
+
+   esac   
+done
+fi
+root@segotl0836# ls -lhtra
+total 44K
+-rwxr-xr-x.  1 root root  14K Jan  3  2020 troubleshoot.sh
+-rwxrwxrwx.  1 root root 4.8K Jan 16  2020 lvextend.sh
+-rwxrwxrwx.  1 root root 5.7K Jan 20  2020 lvcreate.sh
+-rwxrwxr-x.  1 root root 1.5K May 27  2020 useradd.sh
+-rwxr-xr-x.  1 root root 4.0K Jul 26  2020 playbook.tar.gz
+drwxr-xr-x. 11 root root 4.0K Nov  4 16:34 ..
+drwxr-xr-x.  3 root root  119 Dec  1 18:22 .
+drwxr-xr-x.  3 root root   22 Dec  1 18:22 tmp
+root@segotl0836# cd ..
+root@segotl0836# ls -lhtra
+total 1.2G
+-rwxrwxrwx.  1 root    root             2.9M Aug 28  2019 SJ_snowagent-5.2.0-1.x86_64.rpm
+-rw-r--r--.  1   61305 cs_unix_stdgroup  37M Nov 20  2019 delldset_v2.2.125_x64_A01.bin
+drwx------.  2 root    root                6 Jan  3  2020 lost+found
+-rwxrwxrwx.  1 root    root              36M Jun 23  2020 scAgent4.3.2.tar.gz
+-rwxrwxrwx.  1 a330505 cs_unix_stdgroup 6.3M Aug  6  2020 8.1.9.0-TIV-TSMORA-LinuxX64.bin
+-rwxrwxrwx.  1 root    root              20M Aug 14  2020 emcgrab_Linux_v4.8.3.tar
+drwxr-xr-x.  2 root    root                6 Aug 21  2020 openshiftsosreports
+-rwxrwxrwx.  1 a346317 cs_unix_stdgroup  54K Sep 30  2020 actionsite.afxm
+lrwxrwxrwx.  1 root    root               21 Jan 25  2021 oracle-clinet -> /oracle/oracle_client
+drwxr-xr-x.  3 root    root               21 Jan 25  2021 WebScripts
+-rwxrwxrwx.  1   61305 cs_unix_stdgroup  25K Jun 21  2021 check.sh
+-rwx--x--x.  1   61305 cs_unix_stdgroup  29K Aug 11  2021 check_v2.sh
+drwxrwxrwx.  2 root    root              125 May  3  2023 fireeye
+drwxr-xr-x.  2 root    root               58 May 12  2023 mdatp
+drwxr-xr-x.  2 root    root              242 Oct 24  2023 TSMpkg
+-rwxrwxrwx.  1 a440611 cs_unix_stdgroup 884M Jan 18  2024 SP_CLIENT_8.1.20_LIN86_ML.tar.gz
+dr-xr-xr-x. 21 root    root             4.0K Mar  6  2024 ..
+-rwxrwxrwx.  1 v071180 cs_unix_stdgroup 172M Apr  4  2024 NetApp_Snap_Creator_Framework4.3.3P9-Linux64.tar.gz
+-rwxrwxrwx.  1 root    root              11M Apr 26  2024 catalina.out
+drwxr-xr-x. 11 root    root             4.0K Nov  4 16:34 .
+drwx------. 10 root    root             4.0K Nov  4 16:36 a231913
+drwxrwxr-x.  8 a381057 cs_unix_stdgroup   99 Nov 14 10:40 GRC_AVM
+drwxr-xr-x.  3 root    root              119 Dec  1 18:22 dinesh
+root@segotl0836# cd WebScripts/
+root@segotl0836# ll
+total 0
+root@segotl0836# ls -lhtra
+total 4.0K
+drwxr-xr-x.  3 root root   21 Jan 25  2021 .
+drwxr-xr-x.  2 root root  144 Mar 15  2022 .checks
+drwxr-xr-x. 11 root root 4.0K Nov  4 16:34 ..
+root@segotl0836# cat .checks/
+basic_check_test_bkp.sh     basic_check_test.sh         check_test_old.sh           check_test.sh               check_test.sh-bkp-28022022
+root@segotl0836# cat .checks/basic_check_test.sh 
+#!/bin/bash
+rm -rf output.txt
+rm -rf result.txt
+rm -rf fail.txt
+rm -rf failtmp.txt
+rm -rf raw_output*
+
+SERVERS=$1
+USERNAME=$2
+PASSWORD=$3
+CHOICE=$4
+CRNO=$5
+COMMANDEXEC=$6
+TIMEOUT=15
+
+if [ "$COMMANDEXEC" = "" ]; then
+COMMANDEXEC=$CRNO
+fi
+
+CHECKSCRIPT="/unixadmins/WebScripts/.checks/check_test.sh"
+
+uptimecheck()
+{
+sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                uptime " > result.txt 2> failtmp.txt
+        CODE=$?
+if grep -q "Could not resolve hostname" failtmp.txt; then
+printf "<td align=\"center\"><font color=\"red\"><b>Could not resolve Hostname</b></font></td>" >> output.txt
+        elif [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif ! grep days result.txt>/dev/null; then
+printf "<td align=\"center\"><font color=\"red\">$(cat result.txt)</font></td>" >> output.txt
+else
+                #printf "<td>$i</td>" >> output.txt
+
+                printf "<td>$(cat result.txt)</td>" >> output.txt
+        fi
+cat failtmp.txt >> fail.txt
+}
+
+readonlycheck()
+{
+sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                cat /proc/mounts | grep ro,
+cat /dev/null " > result.txt 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+#printf "<td>$i</td>" >> output.txt
+printf "<td align=\"center\">No Read-only File System Found</td>" >> output.txt
+else
+                #printf "<td><font color=\"red\">$i</font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\">$(cat result.txt)</font></td>" >> output.txt
+        fi
+}
+
+clustercheck()
+{
+sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /usr/sbin/clustat
+                cat /dev/null " > result.txt 2> fail.txt
+        CODE=$?
+if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+elif grep -q "not found" fail.txt; then
+#printf "<td>$i</td>" >> output.txt
+printf "<td align=\"center\">Server is not Clustered</td>" >> output.txt
+elif grep -q "Permission denied" fail.txt; then
+#printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+printf "<td align=\"center\"><font color=\"red\"><b>Permission Denied</b></font></td>" >> output.txt
+else
+#printf "<td><font color=\"red\">$i</font></td>" >> output.txt
+printf "<td align=\"center\"><font color=\"red\">Server is Clustered</font></td>" >> output.txt
+fi
+}
+
+tsmversioncheck()
+{
+sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+ rpm -qa | grep -i tdp              
+echo \"<br>\"
+rpm -qa | grep TIVsm-BA | awk -F '-' {'print $3'} | cut -d '.' -f1,2,3,4 " > result.txt 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        else
+                #printf "<td>$i</td>" >> output.txt
+                printf "<td>$(cat result.txt)</td>" >> output.txt
+        fi
+
+}
+
+osversioncheck()
+{
+        sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                cat /etc/*release " > result.txt 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        else
+                #printf "<td>$i</td>" >> output.txt
+                printf "<td>$(cat result.txt)</td>" >> output.txt
+        fi
+}
+
+kernelversioncheck()
+{
+        sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                uname -r " > result.txt 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        else
+                #printf "<td>$i</td>" >> output.txt
+                printf "<td>$(cat result.txt)</td>" >> output.txt
+        fi
+}
+physicalvirtualcheck()
+{
+sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /usr/sbin/dmidecode -t 1  | grep \"Manufacturer:\" 
+cat /dev/null " > result.txt 2>> fail.txt
+CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+elif [ ! -s result.txt ]; then
+printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+elif ! grep -q "VMware" result.txt; then
+printf "<td align=\"center\"><font color=\"blue\">$(cat result.txt)</font></td>" >> output.txt
+        else
+                #printf "<td>$i</td>" >> output.txt
+                printf "<td>$(cat result.txt)</td>" >> output.txt
+        fi
+
+}
+commandcheck()
+{
+        sshpass -p $PASSWORD timeout $TIMEOUT ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+ echo '$PASSWORD' | sudo -S $COMMANDEXEC
+                cat /dev/null " > result.txt 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+else
+                printf "<td>$(cat result.txt)</td>" >> output.txt
+        fi
+}
+
+linuxhealthcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o health
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+        echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+ldapcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o ldap
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+        echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+networkcheck()
+{
+        sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o network
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+nfscheck()
+{
+
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o nfs
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+
+}
+
+lastrebootcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o lastreboot
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+lastpatchcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o lastpatch
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+noofkernelscheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o noofkernels
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+clusterhealthcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o clusterhealth
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+mirroredlvcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o mirroredlv
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+multipathcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o multipath
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+diskusagecheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o diskusage
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+timezonecheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o timezone
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+itmrestart()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o itmrestart
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+teambondmodecheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o teambondmode
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+enslnocheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o enslno
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+hbacardcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o hbacard
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+
+hpphysicaldrivecheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o hpphysicaldrive
+                 cat /dev/null " > result.txt 2>> failtmp.txt
+        CODE=$?
+        if [ $CODE -ne 0 ]; then
+                #printf "<td><font color=\"red\"><b>$i</b></font></td>" >> output.txt
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+        elif [ ! -s result.txt ]; then
+                printf "<td align=\"center\"><font color=\"red\">No Information Found</font></td>" >> output.txt
+        else
+                printf "$(cat result.txt)" >> output.txt
+        fi
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+              echo '$PASSWORD' | sudo -S /bin/rm /tmp/check_test.sh"
+}
+
+beforerebootcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ 2>> fail.txt
+CODE=$?
+        if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to access the Server</b></font></td>" >> output.txt
+                return;
+        fi
+
+# Backups to Save - /home/a227367/WebScripts/Reboot_Backups/${CRNO}_${i}.txt
+sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+#echo '$PASSWORD' | sudo -S /tmp/check.sh.x -o pre $CRNO
+echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o pre $CRNO
+echo '$PASSWORD' | sudo -S chown -R $USERNAME /home/logs
+cat /dev/null " > result.txt 2> failtmp.txt
+CODE=$?
+        if [ $CODE -ne 0 ]; then
+printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server </b></font></td>" >> output.txt
+return;
+else
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -pr ${USERNAME}@${i}:/home/logs/${CRNO}/before_bounce_scan/* /tmp/Pre_Logs/ 2>> fail.txt
+#CODE=$?
+        #if [ $CODE -ne 0 ]; then
+        #        printf "<td align=\"center\"><font color=\"red\"><b>Failed to Copy-back Data to Jump-Host Server</b></font></td>" >> result.txt
+                #return;
+        #fi
+[ -s result.txt ] || echo "<td><font color=\"red\"><b>Could not Fetch any Results, Please check OS</b></font></td>" >> result.txt
+#result=$(cat result.txt)
+#OLDIFS=$IFS
+#IFS=$'\n'
+#for line in $result
+#do
+#printf "<td>$line</td>" >> output.txt
+#done
+#IFS=$OLDIFS
+printf "$(cat result.txt)" >> output.txt
+fi
+
+cat failtmp.txt >> fail.txt
+rawoutputformat
+}
+
+afterrebootcheck()
+{
+sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -p $CHECKSCRIPT $USERNAME@$i:/tmp/ > /dev/null 2>> fail.txt
+
+        sshpass -p $PASSWORD ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -l $USERNAME $i "
+                #echo '$PASSWORD' | sudo -S /tmp/check.sh.x -o post $CRNO
+                echo '$PASSWORD' | sudo -S /bin/bash /tmp/check_test.sh -o post $CRNO
+#rm -rf /tmp/check.sh.x
+                rm -rf /tmp/check_test.sh
+cat /dev/null " > result.txt 2> failtmp.txt
+        CODE=$?
+if [ $CODE -ne 0 ]; then
+                printf "<td align=\"center\"><font color=\"red\"><b>Failed to Connect to Server</b></font></td>" >> output.txt
+                return;
+        #elif grep -q "/tmp/check.sh.x: No such file or directory" failtmp.txt; then
+elif grep -q "/tmp/check_test.sh: No such file or directory" failtmp.txt; then
+printf "<td align=\"center\"><font color=\"red\"><b>Could not find Before Reboot Check Results</b></font></td>" >> output.txt
+return;
+else
+sed -i '1,/END OF PRE/d' result.txt
+[ -s result.txt ] || echo "<td><font color=\"red\"><b>Could not Fetch any Results, Please check OS</b></font></td>" >> result.txt
+                #result=$(cat result.txt)
+                #OLDIFS=$IFS
+                #IFS=$'\n'
+                #for line in $result
+                #do
+                #        printf "<td>$line</td>" >> output.txt
+                #done
+                #IFS=$OLDIFS
+printf "$(cat result.txt)" >> output.txt
+        fi
+
+cat failtmp.txt >> fail.txt
+rawoutputformat
+}
+
+rawoutputformat()
+{
+echo "<!DOCTYPE html>" >> raw_output_${i}.html
+echo "<html>" >> raw_output_${i}.html
+echo "<head>" >> raw_output_${i}.html
+   echo "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" >> raw_output_${i}.html
+   echo "<link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\">" >> raw_output_${i}.html
+   echo "<script src=\"https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js\"></script>" >> raw_output_${i}.html
+   echo "<script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js\"></script>" >> raw_output_${i}.html
+echo "</head>" >> raw_output_${i}.html
+echo "<body>" >> raw_output_${i}.html
+
+echo "<div class=\"container\">" >> raw_output_${i}.html
+  echo "<h2>Server Name - $i</h2>" >> raw_output_${i}.html
+  echo "<p><strong>Note:</strong> Click on any link below to view related data for the Server</p>" >> raw_output_${i}.html
+  echo "<div class=\"panel-group\" id=\"accordion\">" >> raw_output_${i}.html
+
+  filecount=0
+  for files in `ls -p /tmp/Pre_Logs/${i}/ | grep -v /` 
+  do
+    ((filecount++))
+    sed -i 's/</<\\/' /tmp/Pre_Logs/${i}/${files}
+    sed -i 's/$/<br><br>/' /tmp/Pre_Logs/${i}/${files}
+    echo "<div class=\"panel panel-default\">" >> raw_output_${i}.html
+      echo "<div class=\"panel-heading\">" >> raw_output_${i}.html
+        echo "<h4 class=\"panel-title\">" >> raw_output_${i}.html
+          echo "<a data-toggle=\"collapse\" data-parent=\"\#accordion\" href=\"\#collapse${filecount}\">$files</a>" >> raw_output_${i}.html
+        echo "</h4>" >> raw_output_${i}.html
+      echo "</div>" >> raw_output_${i}.html
+      echo "<div id=\"collapse${filecount}\" class=\"panel-collapse collapse\">" >> raw_output_${i}.html
+        echo "<div class=\"panel-body\">$(cat /tmp/Pre_Logs/${i}/${files})</div>" >> raw_output_${i}.html
+      echo "</div>" >> raw_output_${i}.html
+    echo "</div>" >> raw_output_${i}.html
+    sed -i 's/<\\/</' /tmp/Pre_Logs/${i}/${files}
+    sed -i 's/<br><br>//g' /tmp/Pre_Logs/${i}/${files}
+  done
+
+  echo "</div>" >> raw_output_${i}.html
+echo "</div>" >> raw_output_${i}.html
+    
+echo "</body>" >> raw_output_${i}.html
+echo "</html>" >> raw_output_${i}.html
+chmod 666 raw_output_${i}.html
+}
+
+### Main Function ###
+
+for i in $SERVERS
+do
+printf "<tr>" >> output.txt
+
+if [[ $CHOICE = *reboot* ]]; then
+printf "<td><a href=\"http://10.235.9.181/REBOOT_BACKUPS/raw_output_${i}.html\">$i</a></td>" >> output.txt
+else
+printf "<td>$i</td>" >> output.txt
+fi
+
+for ch in $CHOICE
+do
+${ch}check
+done
+
+printf "</tr>" >> output.txt
+
+done
+
+printf "$(cat output.txt)\n"
+root@segotl0836# catll
+total 0
+root@segotl0836# ls -lhtra
+total 4.0K
+drwxr-xr-x.  3 root root   21 Jan 25  2021 .
+drwxr-xr-x.  2 root root  144 Mar 15  2022 .checks
+drwxr-xr-x. 11 root root 4.0K Nov  4 16:34 ..
+root@segotl0836# cat .checks/
+basic_check_test_bkp.sh     basic_check_test.sh         check_test_old.sh           check_test.sh               check_test.sh-bkp-28022022
+root@segotl0836# cat .checks/
+basic_check_test_bkp.sh     basic_check_test.sh         check_test_old.sh           check_test.sh               check_test.sh-bkp-28022022
+root@segotl0836# cat .checks/check_test.sh
+#!/bin/bash
+
+###20Jul2016###
+# * Capturing OS details
+# * Configuration files backup
+# * Mount Point Validation
+# * System services validation
+# * Selinux check
+# * Memory value check
+# * Hardware Validation
+# * timezone
+
+#####09Aug2016######
+# * Merged compare script to this
+
+#####19Aug2016######
+# * Excluded access.conf backup files and created another cp only for access.conf
+# * Added grub.conf backup for RHEL7
+
+#####30Aug2016######
+# * separated OSconfig files backup specifi to RHEL7 & RHEL5/6
+
+#####13Oct2016######
+# * Added checklist for IP addresses
+
+#####30JAN2017######
+# IP Check - Need to work
+# HW Info - Need to just display on webpage
+# Change echo command to use file output
+
+
+user=`who am i | awk '{print $1}'`;
+
+export PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/sbin
+
+case `uname` in
+Linux)
+                      #echo -en "Server is running with `uname` , Backup will be taken care\n"
+                      ;;
+SunOS)
+                      echo -en "<td>Server is running with `uname` , Please do manual backup</td>"
+                      exit;;
+AIX)
+                      echo -en "<td>Server is running with `uname` , Please do manual backup</td>"
+                      exit;;
+*)
+                      echo -en "<td>Please check the OS and do backup</td>"
+                      exit;;
+esac
+
+
+
+
+
+#####Variable definitions ######
+
+OSRelease=$(cat /etc/redhat-release | awk '{print $7}' | awk -F "." '{print $1}')
+
+
+
+########OS Details########
+OSversion()
+{
+OSType="$LOGDIR/OSVersion";
+Kernel="$LOGDIR/kernel";
+cpuinfo="$LOGDIR/cpuinfo";
+grep -c processor /proc/cpuinfo |tee $cpuinfo $LOG_DIR/cpu > /dev/null
+uname -a > $Kernel
+uname -r > $LOG_DIR/kernelversion
+meminfo
+echo "<td>`cat /etc/redhat-release |tee -a $OSType`</td>"
+echo "<td>`uname -r`</td>"
+echo "<td>`cat $cpuinfo`</td>"
+echo "<td>$mem_val</td>"
+}
+
+LinuxHealth()
+{
+##### load average #####
+echo "<td>`uptime | awk '{print $10, $11, $12}'`</td>"
+##### CPU free #####
+echo "<td>`iostat | awk 'NR==4 {print $6}'`</td>"
+##### SWAP used #####
+echo "<td>`free -m | grep Swap | while read output; do T=$(echo $output | awk '{print $2}'| sed 's/k//'); U=$(echo $output | awk '{print $3}'| sed 's/k//'); A=$(echo $output | awk '{print $4}'| sed 's/k//'); TS=\`expr $U+$A | bc\`; echo -e "\n================================\nTotal : $T"; echo "Available : $A"; echo "Used : $U"; P=\`echo "scale=5; ($U/$TS)*100" | bc -l\`; echo -e "Swap utilization is at $P\n================================ \n"; done | awk 'NR==6 {print $5}'`</td>"
+##### Memory Used #####
+echo "<td>`free -m | grep Mem |while read output; do T=$(echo $output | awk '{print $2}'| sed 's/k//'); U=$(echo $output | awk '{print $3}'| sed 's/k//'); A=$(echo $output | awk '{print $4}'| sed 's/k//'); TS=\`expr $U+$A | bc\`; echo -e "\n================================\nTotal : $T"; echo "Available : $A"; echo "Used : $U"; P=\`echo "scale=5; ($U/$TS)*100" | bc -l\`; echo -e "Swap utilization is at $P\n================================ \n"; done | awk 'NR==6 {print $5}'`</td>"
+}
+
+itmrestartcheck()
+{
+echo "<td>`ps -eo pcpu,pid,user,args | sort -k 1 -r | sed 's/%//'| head -5`</td>"
+}
+
+
+cpuused()
+{
+echo "<td>`ps -eo pcpu,pid,user,args | sort -k 1 -r | sed 's/%//'| head -5`</td>"
+}
+
+memoryused()
+{
+echo "<td>`ps -eo user,comm,pid,ppid,%mem | sort -k 5 -r| sed 's/%//'| head -5`</td>"
+}
+
+nfsnotresponding()
+{
+cat /var/log/messages | grep -i nfs | grep -i responding > nfsnotresponding.txt
+     if [ ! -s nfsnotresponding.txt ]; then
+            printf "<td align=\"center\">No NFS not responding error Found</td>"
+        else
+            printf "<td align=\"center\"><font color=\"red\">$(cat nfsnotresponding.txt)</font></td>"
+        fi
+}
+
+multipathcheck()
+{
+
+/usr/sbin/multipath -ll | grep -e failed -e faulty > multipathcheck.txt
+     if [ ! -s multipathcheck.txt ]; then
+            printf "<td align=\"center\">No Faulty Multipath found</td>"
+        else
+            printf "<td align=\"center\"><font color=\"red\">$(cat multipathcheck.txt)</font></td>"
+        fi
+}
+
+teambondmodecheck()
+{
+/sbin/ifconfig -a | grep -i team | awk '{ print $1 }' | cut -d ":" -f 1 > teamresult.txt
+
+if [ -s teamresult.txt ]
+then
+  for i in `cat  teamresult.txt`
+  do
+    var1=$(/bin/teamdctl $i state | grep -i runner | awk '{print $2}')
+    printf "<td>$i</td>"
+    printf "<td>$var1</td>"
+  done
+else
+  printf "<td>No Team/bond</td>"
+  printf "<td>No Team/bond</td>"
+fi
+}
+
+
+
+diskusagecheck()
+{
+totaldisk=`df -k | egrep -v "tmpfs|devtmpfs|1K-block" | awk '{print $2}' | sort -nr | sed '/^$/d' | paste -sd+ | bc`
+useddisk=`df -k | egrep -v "tmpfs|devtmpfs|Used" | awk '{print $3}' | sort -nr | sed '/^$/d' | paste -sd+ | bc`
+osversion=`cat /etc/redhat-release`
+servertype=`dmidecode | grep -A3 '^System Information' | grep -e "Manufacturer" | awk {'print $2'}`
+echo "<td>$totaldisk</td>"
+echo "<td>$useddisk</td>"
+echo "<td>$osversion</td>"
+echo "<td>$servertype</td>"
+}
+
+ldapcheck() 
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+      ldapservstat=`service dirsrv status | egrep "running"`
+         if [ -z "$ldapservstat" ]
+         then
+            echo "<td>Not Running</td>"
+         else
+            echo "<td>Running</td>"     
+         fi
+
+      connections=`lsof -i :389 | egrep "(ESTABLISHED)" | wc -l`
+      cpuusge=`ps aux | grep "ns-slapd" | grep -v grep | awk '{print $3}'`
+        echo "<td>$cpuusge</td>"
+        echo "<td>$connections</td>"
+        ;;
+7)###RHEL 7 Check###
+        ldapservstat=`systemctl list-units --type service | egrep "dirsrv@" | egrep "running"`
+         if [ -z "$ldapservstat" ]
+         then
+            echo "<td>Not Running</td>"
+         else
+            echo "<td>Running</td>"     
+         fi
+
+      connections=`lsof -i :389 | egrep "(ESTABLISHED)" | wc -l`
+      cpuusge=`ps aux | grep "ns-slapd" | grep -v grep | awk '{print $3}'`
+        echo "<td>$cpuusge</td>"
+        echo "<td>$connections</td>"
+        ;;
+*)
+        echo "Not recognized Redhat OS"
+        ;;
+esac
+}
+
+
+networkcheck()
+{
+gateway=$(/sbin/ip route | awk '/default/ { print $3 }')
+dns=$(cat /etc/resolv.conf | awk '/nameserver/ {print $2}' | awk 'NR == 1 {print; exit}')
+if ping -q -c 1 -W 1 $gateway >/dev/null; then
+     printf "<td align=\"center\">Network UP</td>"
+else
+     printf "<td align=\"center\"><font color=\"red\">Gateway Not Rechable</td>"
+fi
+##### NIC IP/NETMASK ########
+osrelease=$(cat /etc/redhat-release | awk '{print $7}' | awk -F "." '{print $1}')
+case $osrelease in
+5|6)
+     printf "<td align=\"center\">"
+     for i in `ifconfig | grep -e HWaddr | awk '{print $1}'`;
+     do
+       ifconfig $i| grep -e Mask | awk '{print  $2, $4}' > ipverify.txt
+       if [ ! -s ipverify.txt ]; then
+            printf "<font color=\"red\">$i ---> No IP/Netmask configured </font><br/>"
+       else
+            printf "$i ---> $(ifconfig $i| grep -e Mask | awk '{print  $2, $4}') <br/>"
+       fi
+     done
+     printf "</td>"
+     printf "<br/>"
+     printf "<td align=\"center\">"
+     for j in `ifconfig | grep -e HWaddr | awk '{print $1}'`;
+     do
+      printf "$j ---> $(ifconfig $j | grep -e errors | awk '{print $1, $3, $4}') <br/>"
+     done
+     printf "</td>"
+     ;;
+7)
+     printf "<td align=\"center\">"
+     for i in `ifconfig | grep -e mtu | awk '{print $1}' | tr -d ':'`;
+     do
+       ifconfig $i | grep -e netmask|  awk '{print  $1, $2, $3, $4}' > ipverify.txt
+       if [ ! -s ipverify.txt ]; then
+            printf "<font color=\"red\">$i ---> No IP/Netmask configured </font><br/>"
+       else
+            printf "$i ---> $(ifconfig $i | grep -e netmask|  awk '{print  $1, $2, $3, $4}') <br/>"
+       fi
+     done
+     printf "</td>"
+     printf "<br/>"
+      printf "<td align=\"center\">"
+     for j in `ifconfig | grep -e mtu | awk '{print $1}'| tr -d ':'`;
+     do
+      printf "$j ---> $(ifconfig $j | grep -e errors | awk '{print $1, $2, $3, $4, $5}') <br/>"
+     done
+     printf "</td>"
+     ;;
+*)
+        echo -en "<td>Please Check OS version </td>"
+        ;;
+esac
+
+############################
+echo "<td>`/sbin/ip route | awk '/default/ { print $3 }'`</td>"
+if ping -q -c 1 -W 1 $dns >/dev/null; then
+     printf "<td align=\"center\">$dns Rechable</td>"
+else
+     printf "<td align=\"center\"><font color=\"red\">$dns Not Rechable</td>"
+fi
+cat /etc/fstab | grep -e nfs | awk -F : '{print $1}' | uniq -u | sed '/^#/ d' > nfsvfiler.txt
+        if [ ! -s nfsvfiler.txt ]; then
+            printf "<td align=\"center\">No NFS shares mounted</td>"
+        else
+           printf "<td align=\"center\">"
+           for i in `cat /etc/fstab | grep -e nfs | awk -F : '{print $1}' | uniq -u | sed '/^#/ d'`;
+           do
+             if ping -q -c 1 -W 1 $i >/dev/null; then
+                printf "$i - OK<br/>"
+             else
+                printf "$i Not Rechable<br/>"
+             fi
+           done
+           printf "</td>\n"
+        fi
+######### BONDING / TEAMING ##########
+ifconfig | grep -e bond -e team | awk '{print $1}' > bondteam.txt
+        if [ ! -s bondteam.txt ]; then
+            printf "<td align=\"center\">No Bonding/Teaming configured</td>"
+        else
+           printf "<td>"
+           for i in `ifconfig | grep -e bond -e team | awk '{print $1}'`;
+           do
+             printf "$i --> $(cat /proc/net/bonding/$i |grep -e Mode -e "Primary Slave" -e "Slave Interface")"
+             printf "<br/>"
+           done
+           printf "</td>\n"
+        fi   
+
+#####################################
+##########ILO/IDRAC IP###############
+
+case $(dmidecode | grep -A3 '^System Information' | grep -e "Manufacturer" | awk {'print $2'}) in
+HP)
+   echo "<td>`hponcfg -w iLO_ouput.out >ilooutput.txt && cat iLO_ouput.out | grep -e IP_ADDRESS | awk 'NR==1 {print $4}' |tr -d "\"/>"`</td>";
+   ;;
+Dell)
+   echo "<td>`racadm getniccfg | grep -e "Static IP Address" | awk 'NR==1 {print $5}'`</td>";
+   ;;
+VMware,)
+   echo "<td>Vmware-server</td>";
+   ;;
+*)
+   echo "<td>solaris/aix/cloud server<td>";
+   ;;
+esac
+
+#####################################
+}
+
+nfscheck()
+{
+cat /proc/mounts | grep -i nfs | grep -e addr | rev | egrep -o '^[^=]+' | awk '{print $3}' | rev | uniq > /tmp/nfs-filer-ip.txt
+for i in `sort /tmp/nfs-filer-ip.txt | uniq`
+do
+    echo "<tr>"
+    echo "<td></td>"
+    source=`/sbin/ip route get $i | grep -i src  | sed 's/\(.*\)\(src*\)/\2/g' | awk '{print $2}'`
+    echo "<td> $source </td>" 
+    echo "<td> $i </td>"
+    shares=`cat /proc/mounts | grep -i nfs | grep -e $i | egrep -o '^[^ ]+'`
+    echo "<td> $shares </td>"
+    echo "</tr>"
+done
+}
+
+lastrebootcheck()
+{
+lastreboot1=`/usr/bin/who -b | awk '{print $3,$4}'`
+echo "<td> $lastreboot1 </td>"
+}
+
+lastpatchcheck()
+{
+lastpatch=`rpm -qa --last | grep kernel | awk 'NR==1{print $3,$4,$5}'`
+echo "<td>$lastpatch</td>"
+}
+
+
+hbacardcheck()
+{
+grep -v "zZzZ" /sys/class/scsi_host/host*/model_name | awk -F '/|:' '{print $5, $7}' > /tmp/modelname.txt
+grep -v "zZzZ" /sys/class/fc_host/host*/speed | awk -F '/|:' '{print $5, $7}' > /tmp/speed.txt
+grep -v "zZzZ" /sys/class/scsi_host/host*/link_state | awk -F '/|:' '{print $5, $7}' > /tmp/linkstate.txt
+grep -v "zZzZ" /sys/class/scsi_host/host*/driver_version | awk -F '/|:' '{print $5, $7}' > /tmp/driverversion.txt
+grep -v "zZzZ" /sys/class/scsi_host/host*/fw_version | awk -F '/|:' '{print $5, $7}' > /tmp/fwversion.txt
+grep -v "zZzZ" /sys/class/fc_host/host*/port_name | awk -F '/|:' '{print $5, $7}' > /tmp/wwnno.txt
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/modelname.txt
+echo "</td>"
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/speed.txt
+echo "</td>"
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/linkstate.txt
+echo "</td>"
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/driverversion.txt
+echo "</td>"
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/fwversion.txt
+echo "</td>"
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/wwnno.txt
+echo "</td>"
+
+}
+
+
+
+
+noofkernelscheck()
+{
+nkernels=`/bin/rpm -q kernel | wc -l`
+#/bin/rpm -q kernel > /tmp/kernellist.txt
+/bin/rpm -qa --last | grep -i kernel-[1-9] > /tmp/kernellist.txt
+echo "<td>$nkernels</td>"
+
+echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/kernellist.txt
+       echo "</td>"
+}
+
+
+
+mirroredlvcheck()
+{
+mirrlv=`/usr/sbin/lvs | fgrep "mw" | awk '{print "LV:" $1 "| VG:" $2 "| SIZE:" $4}'`
+/usr/sbin/lvs | fgrep "mw" | awk '{print "LV:" $1 "| VG:" $2 "| SIZE:" $4}' > /tmp/mirroredlv.txt
+if [ -z "$mirrlv" ]
+then
+      echo "<td>No Mirrred LV's found</td>"
+else
+       echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line" 
+     done < /tmp/mirroredlv.txt
+       echo "</td>"
+fi
+}
+
+multipathcheck1()
+{
+activepaths=`/bin/echo 'show multipaths status' | /sbin/multipathd -k | egrep -v "multipathd"`
+/bin/echo 'show multipaths status' | /sbin/multipathd -k | egrep -v "multipathd"> /tmp/activemultipaths.txt
+if [ -z "$activepaths" ]
+then
+      echo "<td>Multipath Not configured</td>"
+      echo "<td>Multipath Not configured</td>"
+else
+       /usr/sbin/multipath -ll | grep -e failed -e faulty > multipathcheck.txt
+     if [ ! -s multipathcheck.txt ]; then
+            printf "<td align=\"center\">No Faulty Multipath found</td>"
+        else
+            printf "<td align=\"center\"><font color=\"red\">$(cat multipathcheck.txt)</font></td>"
+        fi
+     echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < /tmp/activemultipaths.txt
+       echo "</td>"
+fi
+}
+
+clusterhealthcheck()
+{
+activenodes=`/usr/sbin/pcs status | egrep "Online"`
+/usr/sbin/pcs resource show > activeresources.txt
+/usr/sbin/pcs status | egrep "fence" > activefence.txt
+if [ -z "$activenodes" ]
+then
+
+     /usr/sbin/clustat | egrep "rgmanager" > clusteractivenodes.txt
+     /usr/sbin/clustat | egrep "service" > clustactiveresources.txt
+     /usr/sbin/fence_tool ls | egrep "member" > clustactivefence.txt
+  
+      echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < clusteractivenodes.txt
+       echo "</td>"
+
+ 
+      echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < clustactiveresources.txt
+       echo "</td>"
+    
+    echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < clustactivefence.txt
+       echo "</td>"
+
+else
+    echo "<td>$activenodes</td>"
+
+      echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < activeresources.txt
+       echo "</td>"
+
+    echo "<td>"
+     while read -r line;
+     do
+     echo "<br/>"
+     echo "$line"
+     done < activefence.txt
+       echo "</td>"
+
+fi
+}
+
+ensrnocheck()
+{
+/usr/sbin/hpacucli ctrl all show detail |grep -i array |grep -v Embedded |awk '{print $6}' > /tmp/slot
+sleep 5s
+for i in `cat /tmp/slot`; do /usr/sbin/hpacucli controller slot=$i  enclosure all show detail |egrep "Enclosure|Serial"; done >/tmp/ensrresult.txt
+sleep 5s
+
+if [ -s /tmp/ensrresult.txt ]
+then
+echo "<td>"
+while read -r line;
+do
+echo "<br/>"
+echo "$line"
+done < /tmp/ensrresult.txt
+echo "</td>"
+else
+ printf "<td>please check manually</td>"
+fi
+}
+
+
+
+hpphysicaldrivecheck()
+{
+hppdstatus=`/usr/sbin/hpacucli ctrl all show config | grep -e physicaldrive`
+if [ -z "$hppdstatus" ]
+then 
+     hppdstatus1=`/usr/sbin/hpssacli ctrl all show config | grep -e physicaldrive`
+      if [ -z "$hppdstatus1" ]
+      then
+      hppdstatus2=`/usr/sbin/ssacli ctrl all show config | grep -e physicaldrive`
+          if [ -z "$hppdstatus2" ]
+          then
+            echo "<td>hpacucli/hpasmcli/ssacli commands Not configured</td>"
+          else
+            /usr/sbin/ssacli ctrl all show config | grep -e physicaldrive > /tmp/hpphysicaldrive.txt
+            echo "<td>"
+            while read -r line;
+            do
+             echo "<br/>"
+             echo "$line"
+             done < /tmp/hpphysicaldrive.txt
+            echo "</td>"
+          fi
+      else
+       /usr/sbin/hpssacli ctrl all show config | grep -e physicaldrive > /tmp/hpphysicaldrive.txt
+       echo "<td>"
+            while read -r line;
+            do
+             echo "<br/>"
+             echo "$line"
+             done < /tmp/hpphysicaldrive.txt
+            echo "</td>"
+      fi
+else
+/usr/sbin/hpacucli ctrl all show config | grep -e physicaldrive > /tmp/hpphysicaldrive.txt
+       echo "<td>"
+            while read -r line;
+            do
+             echo "<br/>"
+             echo "$line"
+             done < /tmp/hpphysicaldrive.txt
+            echo "</td>"   
+fi
+}
+
+
+hwhealthcheck()
+{
+case $(dmidecode | grep -A3 '^System Information' | grep -e "Manufacturer" | awk {'print $2'}) in
+HP)
+   echo "<td>`hpasmcli -s "show powersupply" | grep -e "Power supply"  -e Condition`</td>";
+   echo "<td>`hpasmcli -s "show fans" | awk {'print $1, $3, $4'}`</td>";
+   echo "<td>`hpasmcli -s "show dimm" | grep -e Module -e Status`</td>";
+   echo "<td>`hpasmcli -s "show server" | grep -e Processor -e Status`</td>";
+   echo "<td>`hpacucli ctrl all show config | grep -e physicaldrive`</td>";
+   echo "<td>`hpasmcli -s "show temp" | grep -e CPU -e AMBIENT -e MEMORY_BD -e SCSI_BACKPLANE_ZONE`</td>";
+   ;;
+Dell)
+   echo "<td>`/opt/dell/srvadmin/bin/omreport chassis | awk 'NR==9 {print $1}'`</td>";
+   echo "<td>`/opt/dell/srvadmin/bin/omreport chassis | awk 'NR==6 {print $1}'`</td>";
+   echo "<td>`/opt/dell/srvadmin/bin/omreport chassis | awk 'NR==8 {print $1}'`</td>";
+   echo "<td>`/opt/dell/srvadmin/bin/omreport chassis | awk 'NR==11 {print $1}'`</td>";
+   echo "<td>`/opt/dell/srvadmin/bin/omreport storage pdisk controller=0 | grep -e Name -e State`</td>";
+   echo "<td>`/opt/dell/srvadmin/bin/omreport chassis temps | grep -e Probe -e Status`</td>";
+   ;;
+VMware)
+   echo "<td>Vmware-server</td>";
+   echo "<td>Vmware-server</td>";
+   echo "<td>Vmware-server</td>";
+   echo "<td>Vmware-server</td>";
+   echo "<td>Vmware-server</td>";
+   echo "<td>Vmware-server</td>";
+   ;;
+*)
+   echo "<td>solaris/aix server<td>";
+   echo "<td>solaris/aix server<td>";
+   echo "<td>solaris/aix server<td>";
+   echo "<td>solaris/aix server<td>";
+   echo "<td>solaris/aix server<td>";
+   echo "<td>solaris/aix server<td>";
+   ;;
+esac
+}
+
+timezcheck()
+{
+echo "<td>`date +\"%Z\"`</td>"
+case $OSRelease in
+5|6)
+     echo "<td>`ntpq -p | grep -i \"*\" | awk '{print $1}' | cut -d \"*\" -f2`</td>";
+     echo "<td>`ntpq -c rv | grep -i \"rootdelay\" | awk '{print $3}' | cut -d \",\" -f1`</td>";
+     echo "<td>`ntpq -c rv | grep -i "leap" | awk 'NR==2{print $3}' | cut -d "," -f1`</td>";
+     ;;
+7)
+     echo "<td>`chronyc tracking | grep -i \"Reference\" | awk '{print $5}' | cut -d \"(\" -f2 | cut -d \")\" -f1`</td>";
+     echo "<td>`chronyc tracking | grep -i \"System time\" | cut -d \":\" -f2`</td>";
+     echo "<td>`chronyc tracking | grep -i "Leap Status" | cut -d ":" -f2`</td>";
+     ;;
+*)
+        echo -en "<td>Please validate OS version </td>"
+        ;;
+esac
+}
+
+readonlyfilesystem()
+{
+cat /proc/mounts | grep ro, > /tmp/readonlyfs.txt
+        if [ ! -s /tmp/readonlyfs.txt ]; then
+            printf "<td align=\"center\">No Read-only File System Found</td>"
+        else
+            printf "<td align=\"center\"><font color=\"red\">$(cat /tmp/readonlyfs.txt)</font></td>"
+        fi
+}
+######Configuration files backup#########
+OSConfigfielsbackup()
+{
+
+cp -pr /etc/fstab $LOGDIR;
+
+##-------- OS version check to have backup of RHEL7 ----------------------------------##
+case $OSRelease in
+5|6)
+     cp -pr /boot/grub/grub.conf $LOGDIR;
+     ifconfig -a > $LOGDIR/ifconfig-a;
+     route -n > $LOGDIR/route;
+     service --status-all > $LOGDIR/services ;
+     ;;
+7)
+     cp -pr /boot/grub2/grub.cfg $LOGDIR;
+     ip addr show > $LOGDIR/ipaddr;
+     ip route show > $LOGDIR/route;
+     systemctl --all > $LOGDIR/services ;
+     ;;
+*)
+        echo -en "<td>Please validate OS version </td>"
+        ;;
+esac
+##-----------------------------------------------------------------------------##
+
+cp -pr /etc/sysctl.conf $LOGDIR;
+#cp -pr /etc/security $LOGDIR > /dev/null 2>&1 ;
+for i in $(ls /etc/security/ | grep -v "access.conf*")
+do
+mkdir -p $LOGDIR/security
+cp -pr /etc/security/$i $LOGDIR/security
+done
+cp -pr /etc/security/access.conf $LOGDIR/security
+cp -pr /etc/sysconfig $LOGDIR;
+cp -pr /etc/modprob* $LOGDIR > /dev/null 2>&1 ;
+cp -pr /etc/passwd $LOGDIR
+cp -pr /etc/group $LOGDIR
+cp -pr /etc/shadow $LOGDIR
+mount > $LOGDIR/mount
+pvs > $LOGDIR/pv
+vgs > $LOGDIR/vg
+lvs -a -o +devices > $LOGDIR/lvm
+lvmdiskscan > $LOGDIR/lvmscan
+
+ps -aux > $LOGDIR/ps 2>&1;
+date > $LOGDIR/date
+free -m > $LOGDIR/free-m
+sysctl -a > $LOGDIR/sysctl-a
+rpm -qa > $LOGDIR/rpmpackages
+/soe3/bin/soe list > $LOGDIR/soe_list 2>&1 ;
+/soe3/bin/soe listlh -v list > $LOGDIR/soe_lh_list 2>&1 ;
+}
+
+######Mount Point Validation######
+dfcheck()
+{
+df="$LOGDIR/dfvalue";
+dfcomparision="$LOG_DIR/dfcompare"
+df -PTh > $df
+df -Ph | egrep -v ^Filesystem | awk '{print $1 "\t\t"$6}'| sort -u > $dfcomparision
+echo "<td>`cat $dfcomparision | wc -l`</td>"
+#printf '%20s\n' | tr ' ' -
+#echo -en "\e[1;33;40m Df details \e[0m \n"
+#printf '%20s\n' | tr ' ' -
+#echo -en "`cat $df`\n\n"
+}
+
+######System services validation######
+Servicescheck()
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+####Postfix Service Check######
+        service postfix status > $LOGDIR/postfix 2>&1
+        service postfix status  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/postfixstatus
+        echo "<td>`cat $LOG_DIR/postfixstatus`</td>"
+        else
+        echo "Not Running" > $LOG_DIR/postfixstatus
+        echo "<td>`cat $LOG_DIR/postfixstatus`</td>"
+        fi
+        #printf '%30s\n' | tr ' ' -;
+        #echo -en "\e[1;33;40m Services status \e[0m \n"
+        #printf '%30s\n' | tr ' ' -;
+        #echo -en "postfix\t\t : \t`cat $LOG_DIR/postfixstatus` \n"
+#####Sendmail service check######
+        service sendmail status > $LOGDIR/sendmail 2>&1
+        service sendmail status  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/sendmailstatus
+        echo "<td>`cat $LOG_DIR/sendmailstatus`</td>"
+        else
+        echo "Not Running" > $LOG_DIR/sendmailstatus
+        echo "<td>`cat $LOG_DIR/sendmailstatus`</td>"
+        fi
+        #echo -en "sendmail\t : \t`cat $LOG_DIR/sendmailstatus` \n"
+######Puppet service check######
+        service puppet status > $LOGDIR/puppet 2>&1
+        service puppet status  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/puppetstatus
+        echo "<td>`cat $LOG_DIR/puppetstatus`</td>"
+        else
+        echo "Not Running" > $LOG_DIR/puppetstatus
+        echo "<td>`cat $LOG_DIR/puppetstatus`</td>"
+        fi
+        #echo -en "puppet\t\t : \t`cat $LOG_DIR/puppetstatus` \n"
+        ;;
+7) ###RHEL 7 checks###
+####Postfix Service Check######
+       systemctl status postfix > $LOGDIR/postfix 2>&1
+       ps -ef | grep -i postfix | grep -v grep   > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/postfixstatus
+        echo "<td>`cat $LOG_DIR/postfixstatus`</td>"
+        else
+        echo "Not Running" > $LOG_DIR/postfixstatus
+        echo "<td>`cat $LOG_DIR/postfixstatus`</td>"
+        fi
+        #printf '%30s\n' | tr ' ' -;
+        #echo -en "\e[1;33;40m Services status \e[0m \n"
+        #printf '%30s\n' | tr ' ' -;
+        #echo -en "postfix\t\t : \t`cat $LOG_DIR/postfixstatus` \n"
+#####Sendmail service check######
+        systemctl status sendmail > $LOGDIR/sendmail 2>&1
+        ps -ef | grep -i sendmail | grep -v grep   > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/sendmailstatus
+        echo "<td>`cat $LOG_DIR/sendmailstatus`</td>"
+        else
+        echo "Not Running" > $LOG_DIR/sendmailstatus
+        echo "<td>`cat $LOG_DIR/sendmailstatus`</td>"
+        fi
+        #echo -en "sendmail\t : \t`cat $LOG_DIR/sendmailstatus` \n"
+######Puppet Service check#####
+        systemctl status puppet > $LOGDIR/sendmail 2>&1
+        ps -ef | grep -i puppet |  grep -v grep  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/puppetstatus
+        echo "<td>`cat $LOG_DIR/puppetstatus`</td>"
+        else
+        echo "Not Running" > $LOG_DIR/puppetstatus
+        echo "<td>`cat $LOG_DIR/puppetstatus`</td>"
+        fi
+        #echo -en "puppet\t\t : \t`cat $LOG_DIR/puppetstatus` \n"
+        ;;
+*)
+        echo -en "<td>Please validate OS version </td>"
+        ;;
+esac
+}
+
+selinux()
+{
+sestatus > $LOGDIR/selilnux
+getenforce >$LOG_DIR/selinuxstatus
+echo "<td>`cat $LOG_DIR/selinuxstatus`</td>"
+#echo -en "selinux\t\t : \t`cat $LOG_DIR/selinuxstatus` \n"
+}
+
+########Memory value check######
+meminfo() #New version#
+{
+         cat /proc/meminfo | grep -E MemTotal | awk {'print $2'} | tr -d "[:blank:]" > /tmp/mem_temp;
+         expr `cat /tmp/mem_temp` / 1024 / 1024 |tee /tmp/mem_temp1 $LOG_DIR/memory > /dev/null;
+         sed -i 's/$/G/g' /tmp/mem_temp1
+         mem_val=`cat /tmp/mem_temp1`
+}
+
+SOEID_IP_Check() #New version#
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+        for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|bond([0-9])/{print $1}'`
+        do
+             echo " $i : `ifconfig $i | sort -u | awk '/inet addr:/{print $2}' | awk -F : '{print $2}'`"
+        done > $LOG_DIR/SOEIDIP_Compare
+echo "<td>`cat $LOG_DIR/SOEIDIP_Compare | wc -l` IPs / "
+        ;;
+7)###RHEL 7 Check###
+        for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|team([0-9])/{print $1}' | cut -d : -f1`
+        do
+             echo " $i : `ifconfig $i | sort -u | awk '/inet /{print $2}'`"
+        done > $LOG_DIR/SOEIDIP_Compare
+echo "<td>`cat $LOG_DIR/SOEIDIP_Compare | wc -l` IPs / "
+        ;;
+*)
+        echo "<td>Not recognized OS please take backup manually.</td>"
+        ;;
+esac
+}
+
+###MAC Address check####
+
+HWADDR_Check() #New version#
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|bond([0-9])/{print $1}'`
+do
+     echo " $i : `ifconfig $i | sort -u | grep -o -E '([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}'`"
+done > $LOG_DIR/hwaddrcompare
+echo "`cat $LOG_DIR/hwaddrcompare | wc -l` MAC IDs</td>"
+;;
+7)###RHEL 7 Check###
+for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|team([0-9])/{print $1}' | cut -d : -f1`
+do
+     echo " $i : `ifconfig $i | sort -u | awk '/ether/ { print $2}'`"
+        done > $LOG_DIR/hwaddrcompare
+echo "`cat $LOG_DIR/hwaddrcompare | wc -l` MAC IDs</td>"
+;;
+*)
+#echo "Not recognized OS please take backup manually."
+ ;;
+esac
+}
+
+#######Hardware Validation########
+Hardware_details()
+{
+ HW=`dmidecode | grep -i prod`
+ #PrintLine
+ #echo -en "\e[1;33;40mHardware Details :- \e[0m \n $HW \n\n"
+ #PrintLine
+}
+
+timezone()
+{
+date | awk '{print $5}' > $LOG_DIR/tz
+echo "<td>`cat $LOG_DIR/tz`</td>"
+}
+
+
+hostnamecheck()
+{
+hostname > $LOG_DIR/hostnamecheck
+echo "<td>`cat $LOG_DIR/hostnamecheck`</td>"
+}
+
+
+####Clean up of old Change details#####
+cleanup()
+{
+#rm -rf /home/logs/CRQ*
+find /home/logs/ -name 'CRQ*' -mtime +10 > /tmp/logsummary
+if [ `cat /tmp/logsummary | wc -l` -ge 3 ]
+then
+#echo -en "Doing Cleanup of following old dirs \n `cat /tmp/logsummary` \n"
+for i in `cat /tmp/logsummary`
+do
+rm -r $i
+done
+fi
+}
+
+
+#-------------------------------------------------------------------------------------------------------------------------------
+
+##################Addition of compare script in this script itself##############################################
+
+#-------------------------------------------------------------------------------------------------------------------------------
+compare()
+{
+
+PRE_DIR="/home/logs/$chq-`hostname`/pre/$chq"
+POST_DIR="/home/logs/$chq-`hostname`/post/$chq"
+
+postfixcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/postfixstatus $POST_DIR/postfixstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nPostfix : Pass  (`cat $POST_DIR/postfixstatus`)\n"
+echo "<td>Pass (`cat $POST_DIR/postfixstatus`)</td>"
+else
+#echo -en "\033[1;31m\nPostfix : Fail\033[0m\n"
+echo "<td><font color=\"red\"><b>Fail </b></font> <font color=\"red\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/postfixstatus $POST_DIR/postfixstatus`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+sendmailcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/sendmailstatus $POST_DIR/sendmailstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nSendmail : Pass  (`cat $POST_DIR/sendmailstatus`)\n"
+echo "<td>Pass (`cat $POST_DIR/sendmailstatus`)</td>"
+else
+#echo -en "\033[1;31m\nSendmail : Fail\033[0m\n"
+echo "<td><font color=\"red\"><b>Fail </b></font> <font color=\"red\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/sendmailstatus $POST_DIR/sendmailstatus`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+
+puppetcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/puppetstatus $POST_DIR/puppetstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nPuppet : Pass  (`cat $POST_DIR/puppetstatus`)\n"
+echo "<td>Pass (`cat $POST_DIR/puppetstatus`)</td>"
+else
+##echo -en "\033[1;31m\nPuppet : Fail\033[0m\n"
+#echo -n "Puppet : Fail "
+#diff -by --ignore-all-space "$PRE_DIR"/puppetstatus $POST_DIR/puppetstatus
+echo "<td><font color=\"red\"><b>Fail </b></font> <font color=\"red\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/puppetstatus $POST_DIR/puppetstatus`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+selinuxcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/selinuxstatus $POST_DIR/selinuxstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nSelinux : Pass  (`cat $POST_DIR/selinuxstatus`)\n"
+echo "<td>Pass (`cat $POST_DIR/selinuxstatus`)</td>"
+else
+#echo -en "\033[1;31m\nSelinux : Fail\033[0m\n"
+echo "<td><font color=\"red\"><b>Fail </b></font> <font color=\"red\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/selinuxstatus $POST_DIR/selinuxstatus`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+dfcompare()
+{
+countlocal1=`diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<" | wc -l`
+countlocal2=`diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | wc -l`
+        if [[ "$countlocal1" != 0 ]] && [[ "$countlocal2" = 0 ]] ; then
+                ##echo -en "\033[1;31m\nMounted filesystem check\t:\tFail \033[0m\n"
+                ##echo -en "\033[1;31m\n Following local mounts points are missing \033[0m\n"
+                #echo -n "Mounted FS Check : Fail ( mounts points missing ) "
+                #diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<"  | sed ':a;N;$!ba;s/\n/ /g'
+                echo "<td><font color=\"red\"><b>Fail</b></font> <font color=\"red\">(mounts points missing) <br>"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<"  | sed ':a;N;$!ba;s/\n/ /g'
+                echo "</font></td>"
+        elif [[ "$countlocal1" = 0 ]] && [[ "$countlocal2" != 0 ]]; then
+                ##echo -en "\nMounted  filesystem check\t:\tPass\n"
+                ##echo -en "\033[1;32m\nThe following additional mount points are mounted after the activity \033[0m\n"
+                #echo -n "Mounted FS Check : Pass ( additional mount points ) "
+                #diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | sed ':a;N;$!ba;s/\n/ /g'
+                echo "<td><font color=\"blue\"><b>Pass</b></font> <font color=\"blue\">(additional mount points) <br>"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | sed ':a;N;$!ba;s/\n/ /g'
+                echo "</font></td>"
+        elif [[ "$countlocal1" != 0 ]] && [[ "$countlocal2" != 0 ]]; then
+                #echo -en "\033[1;31m\nMounted filesystem check\t:\tFail \033[0m\n"
+                #echo -en "\033[1;31m\n Following local mounts points are missing \033[0m\n"
+                echo "<td><font color=\"red\"><b>Fail</b></font> <font color=\"red\"> (mounts points missing) <br>"
+                echo "`diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<"  | sed ':a;N;$!ba;s/\n/ /g'`<br>"
+                #echo -en "\033[1;32m\nThe following additional mount points are mounted after the activity \033[0m\n"
+                echo "additional mount points: <br>"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | sed ':a;N;$!ba;s/\n/ /g'
+                echo "</font></td>"
+        else
+                #echo -en "\nMounted local filesystem check\t:\tPass\n"
+                echo "<td>Pass</td>"
+
+        fi
+}
+
+tzcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/tz "$POST_DIR"/tz 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nTimezone : Pass  (`cat $POST_DIR/tz`)\n"
+echo "<td>Pass (`cat $POST_DIR/tz`)</td>"
+else
+#echo -en "\033[1;31m\nTimezone : Fail\033[0m\n"
+echo "<td><font color=\"red\"><b>Fail </b></font> <font color=\"red\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/tz "$POST_DIR"/tz`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+hostnamecompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/hostnamecheck "$POST_DIR"/hostnamecheck 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nHostname : Pass  (`cat $POST_DIR/hostnamecheck`)\n"
+echo "<td>Pass (`cat $POST_DIR/hostnamecheck`)</td>"
+else
+#echo -en "\033[1;31m\nHostname : Fail\033[0m\n"
+echo "<td><font color=\"red\"><b>Fail </b></font> <font color=\"red\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/hostnamecheck "$POST_DIR"/hostnamecheck`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+SOEIDIPcompare()
+{
+IPcount1=`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep "<" | wc -l`
+IPcount2=`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep ">" | wc -l`
+if [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" = 0 ]] ; then
+                #echo -en "\033[1;31m\nIP Address check\t:\tFail \033[0m\n"
+                #echo -en "\033[1;31m\n Following IP address/interfaces are missing \033[0m\n"
+                echo "<td><font color=\"red\"><b>Fail</b></font> <font color=\"red\"> (IP address missing)<br>"
+                echo "`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep "<"` / " | sed ':a;N;$!ba;s/\n/ /g'
+echo "</font><br>"
+        elif [[ "$IPcount1" = 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                #echo -en "\nIP Address check\t:\tPass\n"
+                #echo -en "\033[1;32m\nThe following IP address/interfaces are up after the activity \033[0m\n"
+                echo "<td><font color=\"blue\"><b>Pass</b></font> <font color=\"blue\"> (IP address up after the activity)<br>"
+                echo "`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep ">"` / " | sed ':a;N;$!ba;s/\n/ /g'
+echo "</font><br>"
+        elif [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                #echo -en "\033[1;31m\nIP Adress check\t:\tFail \033[0m\n"
+                #echo -en "\033[1;31m\n Following IP address/interfaces are missing \033[0m\n"
+                echo "<td><font color=\"red\"><b>Fail</b></font> <font color=\"red\"> (IP address missing)<br>"
+                echo "`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep "<"`" | sed ':a;N;$!ba;s/\n/ /g'
+                #echo -en "\033[1;32m\nThe following IP address/interfaces are up after the activity \033[0m\n"
+                echo "<br>IP address up after the activity: <br>"
+                echo "`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep ">"` / " | sed ':a;N;$!ba;s/\n/ /g'
+echo "</font><br>"
+        else
+                #echo -en "\nIP Address check\t:\tPass\n"
+                echo "<td>Pass / "
+
+        fi
+}
+
+HWaddrcompare()
+{
+IPcount1=`diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep "<" | wc -l`
+IPcount2=`diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep ">" | wc -l`
+if [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" = 0 ]] ; then
+                #echo -en "\033[1;31m\nMAC Address check\t:\tFail \033[0m\n"
+                #echo -en "\033[1;31m\n Following interfaces are having different MAC address \033[0m\n"
+                echo "<font color=\"red\"><b>Fail</b></font> <font color=\"red\"> (MAC Address missing)<br>"
+diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep "<" | sed ':a;N;$!ba;s/\n/ /g'
+echo "</font></td>"
+        elif [[ "$IPcount1" = 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                #echo -en "\nMAC Address check\t:\tPass\n"
+                #echo -en "\033[1;32m\nThe following interfaces are up after the activity \033[0m\n"
+                echo "<font color=\"blue\"><b>Pass</b></font> <font color=\"blue\"> (Interfaces up after the activity)<br>"
+diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep ">" | sed ':a;N;$!ba;s/\n/ /g'
+echo "</font></td>" 
+        elif [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                #echo -en "\033[1;31m\nMAC Adress check\t:\tFail \033[0m\n"
+                #echo -en "\033[1;31m\n Following interfaces are having different MAC address \033[0m\n"
+                echo "<font color=\"red\"><b>Fail</b></font> <font color=\"red\"> (Different MAC Address)<br>"
+echo "`diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep "<"`" | sed ':a;N;$!ba;s/\n/ /g'
+                #echo -en "\033[1;32m\nThe following interfaces are up after the activity \033[0m\n"
+                echo "<br>Interfaces up after the activity: <br>"
+diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep ">" | sed ':a;N;$!ba;s/\n/ /g'
+echo "</font></td>" 
+        else
+                #echo -en "\nMAC Address check\t:\tPass\n"
+echo "Pass</td>"
+        fi
+}
+
+cpu()
+{
+diff -b --ignore-all-space "$PRE_DIR"/cpu "$POST_DIR"/cpu 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nCPUcheck : Pass  (`cat $POST_DIR/cpu`)\n"
+echo "<td>Pass (`cat $POST_DIR/cpu`)</td>"
+else
+#echo -en "\033[1;31m\nCPUcheck : Fail\033[0m\n"
+echo "<td><font color=\"blue\"><b>Changed </b></font> <font color=\"blue\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/cpu "$POST_DIR"/cpu`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+memory()
+{
+diff -b --ignore-all-space "$PRE_DIR"/memory "$POST_DIR"/memory 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nmemorycheck : Pass  (`cat $POST_DIR/memory`G)\n"
+echo "<td>Pass (`cat $POST_DIR/memory`G)</td>"
+else
+#echo -en "\033[1;31m\nmemorycheck : Fail\033[0m\n"
+echo "<td><font color=\"blue\"><b>Changed </b></font> <font color=\"blue\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/memory "$POST_DIR"/memory`"
+echo ")"
+echo "</font></td>"
+fi
+}
+
+kernel()
+{
+diff -b --ignore-all-space "$PRE_DIR"/kernelversion "$POST_DIR"/kernelversion 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+#echo -en "\nkernelversioncheck : Pass  (`cat $POST_DIR/kernelversion`)\n"
+echo "<td>Pass (`cat $POST_DIR/kernelversion`)</td>"
+else
+#echo -en "\033[1;31m\nkernelversioncheck : Fail\033[0m\n"
+echo "<td><font color=\"blue\"><b>Changed </b></font> <font color=\"blue\"> ("
+echo "`diff -by --ignore-all-space "$PRE_DIR"/kernelversion "$POST_DIR"/kernelversion`"
+echo ")"
+echo "</font></td>"
+fi
+}
+#clear
+#printf '\t%100s\n' | tr ' ' -;
+#echo -en "\n\t\t\033[35m ########## Pre/Post comparison ############# \033[0m\n"
+#printf '\t%100s\n' | tr ' ' -;
+echo "<td>`cat /etc/redhat-release |tee -a $OSType`</td>"
+kernel
+cpu
+memory
+dfcompare
+postfixcompare
+sendmailcompare
+puppetcompare
+selinuxcompare
+tzcompare
+hostnamecompare
+SOEIDIPcompare
+HWaddrcompare
+}
+
+#---------------------------------------------------------------------------------------------------------------------
+
+#####################################Compare script end########################################################
+
+#---------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+###### Function is used to print the useage of script ######
+scriptUsage(){
+        clear;
+        echo
+        printf '\t%80s\n' | tr ' ' -
+        echo -en "\n\t\t * * * * Host Pre/Post migration check  * * * * \t\n";
+        printf '\t%80s\n' | tr ' ' -
+        echo -en "\n";
+        echo -en "\nThis tool will collect information about host deatils before/after migration"
+        echo
+        echo -en "\nUsage: $0 -o pre/post/health \n"
+        printf '%30s\n' | tr ' ' -
+        echo -en "\n\t-o   - Used for option";
+        echo -en "\n\thealth - Linux Health Check";
+        echo -en "\n\tnetwork - Network Check";
+        echo -en "\n\tpre  - Before migration";
+        echo -en "\n\tpost - After migration\n";
+        printf '%30s\n' | tr ' ' -
+}
+
+################ Input validation #########
+if [ $# -le 1  ]
+then
+scriptUsage
+echo -en "\nKindly provide \"pre\/post\" keyword and re-execute the script.\n";
+exit 1;
+else
+        #clear;
+        option=$1;
+        value=$2;
+        chq=$3;
+        if [ "$option" != "-o" ]
+        then
+                echo -en "\nPlease check the option \"$option\" provided and re-execute the script.\n";
+                exit 1;
+        elif [ "$value" == "pre"  ] ||  [ "$value" == "post"  ] || [ "$value" == "health"  ] || [ "$value" == "network"  ] || [ "$value" == "nfs"  ] || [ "$value" == "lastreboot"  ] ||  [ "$value" == "mirroredlv"  ] ||  [ "$value" == "multipath"  ] ||  [ "$value" == "hpphysicaldrive"  ] ||  [ "$value" == "lastpatch"  ] ||  [ "$value" == "noofkernels"  ] ||  [ "$value" == "clusterhealth"  ] ||  [ "$value" == "hbacard"  ] ||  [ "$value" == "ldap"  ] || [ "$value" == "diskusage"  ] || [ "$value" == "timezone"  ] || [ "$value" == "itmrestart"  ] || [ "$value" == "teambondmode"  ] || [ "$value" == "enslno" ]
+        then
+                #################################################################
+                #                       Main Function                           #
+                #################################################################
+                if [ "$value" == "pre" ]
+                then
+                LOGDIR=/home/logs/$chq/before_bounce_scan/`hostname`
+                mkdir -p $LOGDIR
+                        #LOGDIR=/home/logs/$chq/before_bounce_scan/`hostname`
+                        #mkdir -p $LOGDIR
+                        LOG_DIR="/home/logs/$chq-`hostname`/pre/$chq"
+                        mkdir -p "$LOG_DIR";
+                        OSversion
+                        dfcheck
+                        Hardware_details
+                        Servicescheck
+                        selinux
+                        timezone
+                        hostnamecheck
+                        SOEID_IP_Check
+HWADDR_Check
+                        OSConfigfielsbackup
+                        #chown -R $user /home/logs
+                       #echo -en "\nYou can find pre logs under : $LOG_DIR \n";
+                        #sleep 2;
+                        #echo -en "\nPlease run below commands on segotl0836\n"
+                        #echo -en "\n\e[31m scp -pr $user@`hostname -f`:$LOGDIR /tmp/Pre_Logs/  \e[0m \n"
+                elif [ "$value" == "health" ]
+                then 
+                        LinuxHealth
+                        dfcheck
+                        Hardware_details
+                        cpuused
+                        memoryused
+                        nfsnotresponding
+                        selinux
+                        readonlyfilesystem
+                        multipathcheck
+                        hwhealthcheck
+                        hostnamecheck
+                        SOEID_IP_Check
+                        HWADDR_Check
+                elif [ "$value" == "network" ]
+                then
+                        networkcheck
+
+                elif [ "$value" == "nfs" ]
+                then
+                        nfscheck
+                elif [ "$value" == "lastreboot" ]
+                then
+                        lastrebootcheck
+                elif [ "$value" == "mirroredlv" ]
+                then
+                        mirroredlvcheck
+                elif [ "$value" == "multipath" ]
+                then
+                        multipathcheck1
+                elif [ "$value" == "hpphysicaldrive" ]
+                then
+                        hpphysicaldrivecheck
+                elif [ "$value" == "lastpatch" ]
+                then
+                        lastpatchcheck
+                elif [ "$value" == "noofkernels" ]
+                then
+                        noofkernelscheck
+                elif [ "$value" == "clusterhealth" ]
+                then
+                        clusterhealthcheck
+               elif [ "$value" == "hbacard" ]
+                then
+                        hbacardcheck
+               elif [ "$value" == "ldap" ]
+                then
+                        ldapcheck
+               elif [ "$value" == "diskusage" ]
+                then
+                        diskusagecheck
+               elif [ "$value" == "timezone" ]
+                then
+                        timezcheck
+               elif [ "$value" == "itmrestart" ]
+                then
+                        itmrestartcheck
+               elif [ "$value" == "teambondmode" ]
+                then
+                        teambondmodecheck
+               elif [ "$value" == "enslno" ]
+                then
+ensrnocheck
+              
+               else
+                        if [ ! -d "/home/logs/$chq-`hostname`/pre/$chq" ]; then
+                                echo ""
+                                echo "END OF PRE"
+                                echo "<td><font color=\"red\"><b>Could not find Before Reboot Results, Can't Continue</b></font></td>"
+                                exit 35;
+                        fi
+                LOGDIR=/home/logs/$chq/After_bounce_scan/`hostname`
+mkdir -p $LOGDIR
+                        LOG_DIR="/home/logs/$chq-`hostname`/post/$chq"
+                        mkdir -p "$LOG_DIR";
+                        OSversion
+                        dfcheck
+                        Hardware_details
+                        Servicescheck
+                        selinux
+                        timezone
+                        hostnamecheck
+                        SOEID_IP_Check
+HWADDR_Check
+                        OSConfigfielsbackup
+                        #sleep 2;
+                        echo "END OF PRE"
+                        compare
+                       #echo -en "\nYou can find post logs under : $LOG_DIR \n";
+
+                        cleanup
+                fi
+         fi
+fi
+
+
+
+
+
+root@segotl0836# ll
+total 0
+root@segotl0836# cd ..
+root@segotl0836# ll
+total 1193804
+-rwxrwxrwx.  1 a330505 cs_unix_stdgroup   6513104 Aug  6  2020 8.1.9.0-TIV-TSMORA-LinuxX64.bin
+drwx------. 10 root    root                  4096 Nov  4 16:36 a231913
+-rwxrwxrwx.  1 a346317 cs_unix_stdgroup     54305 Sep 30  2020 actionsite.afxm
+-rwxrwxrwx.  1 root    root              10595687 Apr 26  2024 catalina.out
+-rwxrwxrwx.  1   61305 cs_unix_stdgroup     24696 Jun 21  2021 check.sh
+-rwx--x--x.  1   61305 cs_unix_stdgroup     29513 Aug 11  2021 check_v2.sh
+-rw-r--r--.  1   61305 cs_unix_stdgroup  38076490 Nov 20  2019 delldset_v2.2.125_x64_A01.bin
+drwxr-xr-x.  3 root    root                   119 Dec  1 18:22 dinesh
+-rwxrwxrwx.  1 root    root              20408320 Aug 14  2020 emcgrab_Linux_v4.8.3.tar
+drwxrwxrwx.  2 root    root                   125 May  3  2023 fireeye
+drwxrwxr-x.  8 a381057 cs_unix_stdgroup        99 Nov 14 10:40 GRC_AVM
+drwx------.  2 root    root                     6 Jan  3  2020 lost+found
+drwxr-xr-x.  2 root    root                    58 May 12  2023 mdatp
+-rwxrwxrwx.  1 v071180 cs_unix_stdgroup 179730114 Apr  4  2024 NetApp_Snap_Creator_Framework4.3.3P9-Linux64.tar.gz
+drwxr-xr-x.  2 root    root                     6 Aug 21  2020 openshiftsosreports
+lrwxrwxrwx.  1 root    root                    21 Jan 25  2021 oracle-clinet -> /oracle/oracle_client
+-rwxrwxrwx.  1 root    root              37069664 Jun 23  2020 scAgent4.3.2.tar.gz
+-rwxrwxrwx.  1 root    root               3034619 Aug 28  2019 SJ_snowagent-5.2.0-1.x86_64.rpm
+-rwxrwxrwx.  1 a440611 cs_unix_stdgroup 926885546 Jan 18  2024 SP_CLIENT_8.1.20_LIN86_ML.tar.gz
+drwxr-xr-x.  2 root    root                   242 Oct 24  2023 TSMpkg
+drwxr-xr-x.  3 root    root                    21 Jan 25  2021 WebScripts
+root@segotl0836# cat check_v2.sh 
+#!/bin/bash
+
+###20Jul2016###
+# * Capturing OS details
+# * Configuration files backup
+# * Mount Point Validation
+# * System services validation
+# * Selinux check
+# * Memory value check
+# * Hardware Validation
+# * timezone
+
+#####09Aug2016######
+# * Merged compare script to this
+
+#####19Aug2016######
+# * Excluded access.conf backup files and created another cp only for access.conf
+# * Added grub.conf backup for RHEL7
+
+#####30Aug2016######
+# * separated OSconfig files backup specifi to RHEL7 & RHEL5/6
+
+#####13Oct2016######
+# * Added checklist for IP addresses
+
+#####13Feb2017######
+# * Adding comparison check for CPU,Memory and Kernel
+# * Modified IP check for RHEL 7
+
+user=`who am i | awk '{print $1}'`;
+username=`getent passwd $user | awk -F : '{print $5}'`;
+#echo "---------------------------------------------";
+echo -e "$username is currently logged in the server \n"
+#echo "---------------------------------------------";
+######User validation######
+if [ `id -un` != "root" ] ;then
+echo -e "\e[1;31m You must be  root to run this scrit \e[0m"
+exit
+fi
+
+case `uname` in
+Linux)
+                      echo -en "Server is running with `uname` , Backup will be taken care\n"
+      ;;
+SunOS)
+                      echo -en "Server is running with `uname` , lease do manual backup\n"
+      exit;;
+AIX)
+                      echo -en "Server is running with `uname` , lease do manual backup\n"
+                      exit;;
+*)
+                      echo -en "Please check the OS and do backup\n"
+                      exit;;
+esac
+
+
+
+
+PrintLine()
+{
+printf '%82s\n' | tr ' ' -
+}
+
+#####Variable definitions ######
+
+#OSRelease=$(cat /etc/redhat-release | awk '{print $7}' | awk -F "." '{print $1}')
+OSRelease=$(cat /etc/redhat-release | sed -e 's/^.* \([0-9]\+\.[0-9]*\) .*/\1/g' | cut -d . -f1)
+
+########OS Details########
+OSversion()
+{
+OSType="$LOGDIR/OSVersion";
+Kernel="$LOGDIR/kernel";
+cpuinfo="$LOGDIR/cpuinfo";
+grep -c processor /proc/cpuinfo |tee $cpuinfo $LOG_DIR/cpu > /dev/null #New version#
+uname -a > $Kernel 
+uname -r > $LOG_DIR/kernelversion #New version#
+meminfo
+swapinfo
+echo "-------------------"
+echo -e "\e[1;33;40m OS Details \e[0m"
+echo -en "-------------------\n"
+#printf '%82s\n' | tr ' ' -
+echo -en "OS       : `cat /etc/redhat-release |tee -a $OSType`\n"
+echo -en "Kernel   : `uname -r`\n"
+echo -en "Cpu      : `cat $cpuinfo`\n"
+echo -en "Memory   : $mem_val\n"
+echo -en "Swap     : $swp_val\n"
+echo -en "Timezone : `date |  awk '{print $5}'`\n\n "
+}
+
+######Configuration files backup#########
+OSConfigfielsbackup()
+{
+
+cp -pr /etc/fstab $LOGDIR;
+
+##-------- OS version check to have backup of RHEL7 ----------------------------------##
+case $OSRelease in
+5|6)
+     cp -pr /boot/grub/grub.conf $LOGDIR;
+     ifconfig -a > $LOGDIR/ifconfig-a;
+     route -n > $LOGDIR/route;
+     service --status-all > $LOGDIR/services ;
+     ;;
+7|8)
+     cp -pr /boot/grub2/grub.cfg $LOGDIR;
+     ip addr show > $LOGDIR/ipaddr;
+     ip route show > $LOGDIR/route;
+     systemctl --all > $LOGDIR/services ;
+     ;;
+*)
+        echo -en "Please validate OS version \n"
+        ;;
+esac
+##-----------------------------------------------------------------------------##
+
+cp -pr /etc/sysctl.conf $LOGDIR;
+#cp -pr /etc/security $LOGDIR > /dev/null 2>&1 ;
+for i in $(ls /etc/security/ | grep -v "access.conf*")
+do
+mkdir -p $LOGDIR/security
+cp -pr /etc/security/$i $LOGDIR/security
+done
+cp -pr /etc/security/access.conf $LOGDIR/security
+cp -pr /etc/sysconfig $LOGDIR;
+cp -pr /etc/modprob* $LOGDIR > /dev/null 2>&1 ;
+cp -pr /etc/passwd $LOGDIR
+cp -pr /etc/group $LOGDIR
+cp -pr /etc/shadow $LOGDIR
+mount > $LOGDIR/mount
+pvs > $LOGDIR/pv
+vgs > $LOGDIR/vg
+lvs -a -o +devices > $LOGDIR/lvm
+lvmdiskscan > $LOGDIR/lvmscan
+ps -aux > $LOGDIR/ps 2>&1;
+date > $LOGDIR/date
+free -m > $LOGDIR/free-m
+sysctl -a --ignore 2>/dev/null > $LOGDIR/sysctl-a
+rpm -qa > $LOGDIR/rpmpackages
+/soe3/bin/soe list > $LOGDIR/soe_list 2>&1 ;
+/soe3/bin/soe listlh -v list > $LOGDIR/soe_lh_list 2>&1 ;
+}
+
+######Mount Point Validation######
+dfcheck()
+{
+df="$LOGDIR/dfvalue";
+dfcomparision="$LOG_DIR/dfcompare"
+df -PTh > $df
+df -Ph | egrep -v ^Filesystem | awk '{print $1 "\t\t"$6}'| sort -u > $dfcomparision
+printf '%20s\n' | tr ' ' -
+echo -en "\e[1;33;40m Df details \e[0m \n"
+printf '%20s\n' | tr ' ' -
+echo -en "`cat $df`\n\n"
+}
+
+######System services validation######
+Services-check()
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+####Postfix Service Check######
+service postfix status > $LOGDIR/postfix 2>&1
+service postfix status  > /dev/null 2>&1
+if [ $? = 0 ]
+then
+echo "Running" > $LOG_DIR/postfixstatus
+else
+echo "Not Running" > $LOG_DIR/postfixstatus
+fi
+printf '%30s\n' | tr ' ' -;
+echo -en "\e[1;33;40m Services status \e[0m \n"
+printf '%30s\n' | tr ' ' -;
+echo -en "postfix\t\t : \t`cat $LOG_DIR/postfixstatus` \n"
+#####Sendmail service check######
+        service sendmail status > $LOGDIR/sendmail 2>&1
+        service sendmail status  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/sendmailstatus
+        else
+        echo "Not Running" > $LOG_DIR/sendmailstatus
+        fi
+        echo -en "sendmail\t : \t`cat $LOG_DIR/sendmailstatus` \n"
+######Puppet service check######
+        service puppet status > $LOGDIR/puppet 2>&1
+        service puppet status  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/puppetstatus
+        else
+        echo "Not Running" > $LOG_DIR/puppetstatus
+        fi
+        echo -en "puppet\t\t : \t`cat $LOG_DIR/puppetstatus` \n"
+;;
+7|8) ###RHEL 7/8 checks###
+####Postfix Service Check######
+       systemctl status postfix > $LOGDIR/postfix 2>&1
+       ps -ef | grep -i postfix | grep -v grep   > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/postfixstatus
+        else
+        echo "Not Running" > $LOG_DIR/postfixstatus
+        fi
+        printf '%30s\n' | tr ' ' -;
+        echo -en "\e[1;33;40m Services status \e[0m \n"
+        printf '%30s\n' | tr ' ' -;
+        echo -en "postfix\t\t : \t`cat $LOG_DIR/postfixstatus` \n"
+#####Sendmail service check######
+        systemctl status sendmail > $LOGDIR/sendmail 2>&1
+        ps -ef | grep -i sendmail | grep -v grep   > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/sendmailstatus
+        else
+        echo "Not Running" > $LOG_DIR/sendmailstatus
+        fi
+        echo -en "sendmail\t : \t`cat $LOG_DIR/sendmailstatus` \n"
+######Puppet Service check#####
+        systemctl status puppet > $LOGDIR/sendmail 2>&1
+        ps -ef | grep -i puppet |  grep -v grep  > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+        echo "Running" > $LOG_DIR/puppetstatus
+        else
+        echo "Not Running" > $LOG_DIR/puppetstatus
+        fi
+        echo -en "puppet\t\t : \t`cat $LOG_DIR/puppetstatus` \n"
+;;
+*)
+        echo -en "Please validate OS version \n"
+        ;;
+esac
+}
+
+selinux()
+{
+sestatus > $LOGDIR/selilnux
+getenforce >$LOG_DIR/selinuxstatus
+echo -en "selinux\t\t : \t`cat $LOG_DIR/selinuxstatus` \n"
+}
+
+########Memory value check######
+meminfo() #New version#
+{
+         cat /proc/meminfo | grep -E MemTotal | awk {'print $2'} | tr -d "[:blank:]" > /tmp/mem_temp;
+         expr `cat /tmp/mem_temp` / 1024 / 1024 |tee /tmp/mem_temp1 $LOG_DIR/memory;
+         sed -i 's/$/G/g' /tmp/mem_temp1
+         mem_val=`cat /tmp/mem_temp1`
+}
+
+########Swap value check newly added#######
+swapinfo()
+{
+         cat /proc/meminfo | grep -E SwapTotal | awk {'print $2'} | tr -d "[:blank:]" > /tmp/swp_temp;
+         expr `cat /tmp/swp_temp` / 1024 / 1024 |tee /tmp/swp_temp1 $LOG_DIR/swap;
+         sed -i 's/$/G/g' /tmp/swp_temp1
+         swp_val=`cat /tmp/swp_temp1`
+}
+
+SOEID_IP_Check() #New version#
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|bond([0-9])/{print $1}'`
+do
+     echo " $i : `ifconfig $i | sort -u | awk '/inet addr:/{print $2}' | awk -F : '{print $2}'`"
+done > $LOG_DIR/SOEIDIP_Compare
+;;
+7|8)###RHEL 7/8 Check###
+for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|ens([0-9]|[0-9]:[0-9])|team([0-9])/{print $1}' | cut -d : -f1 | uniq`
+#for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|team([0-9])/{print $1}' | cut -d : -f1`
+do
+     echo " $i : `ifconfig $i | sort -u | awk '/inet /{print $2}'`"
+        done > $LOG_DIR/SOEIDIP_Compare
+;;
+*)
+echo "Not recognized OS please take backup manually."
+ ;;
+esac
+}
+######################### Newly added on 22/06/2021 #######################################
+Bond_Team_check()
+{
+nic=$(ifconfig -a | egrep -o 'team|bond' | uniq)
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+   if [[ -z "$nic" ]];
+      then
+        echo "No team/bond interface configured in this server" > $LOG_DIR/Bond_Teamcompare
+        PrintLine
+        echo -en "\e[1;33;40mBond_Team Modes : \e[0m \n`cat $LOG_DIR/Bond_Teamcompare` \n\n"
+        PrintLine
+      else 
+      for i in `ifconfig | awk  '$1 ~ /bond([0-9])/{print $1}' | cut -d : -f1 | uniq`
+         do 
+  echo "$i : `cat /proc/net/bonding/$i | egrep 'active-backup|aggregation|roundrobin'`"
+         done > $LOG_DIR/Bond_Teamcompare
+         PrintLine
+ echo -en "\e[1;33;40mBond_Team Modes : \e[0m \n`cat $LOG_DIR/Bond_Teamcompare` \n\n"
+         PrintLine
+   fi
+ ;;
+7|8)###RHEL 7/8 Check###
+   if [[ -z "$nic" ]];
+      then
+        echo "No team/bond interface configured in this server" > $LOG_DIR/Bond_Teamcompare
+        PrintLine
+        echo -en "\e[1;33;40mBond_Team Modes : \e[0m \n`cat $LOG_DIR/Bond_Teamcompare` \n\n"
+        PrintLine
+        elif [[ "$nic" == team ]];
+  then         
+ for i in `ifconfig | awk  '$1 ~ /team([0-9])/{print $1}'| cut -d : -f1 | uniq`
+ do
+   echo "$i : `teamdctl $i state | egrep 'activebackup|lacp|roundrobin'`"
+done > $LOG_DIR/Bond_Teamcompare
+        PrintLine
+ echo -en "\e[1;33;40mBond_Team Modes : \e[0m \n`cat $LOG_DIR/Bond_Teamcompare` \n\n"
+        PrintLine
+          else
+                for i in `ifconfig | awk  '$1 ~ /bond([0-9])/{print $1}' | cut -d : -f1 | uniq`
+ do
+          echo "$i : `cat /proc/net/bonding/$i | egrep 'active-backup|roundrobin|aggregation'`"
+ done > $LOG_DIR/Bond_Teamcompare
+PrintLine
+ echo -en "\e[1;33;40mBond_Team Modes : \e[0m \n`cat $LOG_DIR/Bond_Teamcompare` \n\n"
+ PrintLine
+   fi
+        ;;
+*)
+         echo "Not recognized OS please take backup manually."
+ ;;
+esac 
+}
+#################################################################################################
+########################## Added on 11/08/2021 ##################################################
+Cluster_check()
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+pcsstate=$(find /usr/sbin -type f -name  clustat)
+if [[ -z "$pcsstate" ]];
+        then
+        echo "Not a Cluster Node" > $LOG_DIR/clustercompare
+        PrintLine
+        echo -en "\e[1;33;40mCluster Status : \e[0m \n`cat $LOG_DIR/clustercompare` \n\n"
+        PrintLine
+        else
+        $pcsstate | grep  -E 'Online|Offline' > $LOG_DIR/clustercompare
+        PrintLine
+        echo -en "\e[1;33;40mCluster Status : \e[0m \n`cat $LOG_DIR/clustercompare` \n\n"
+        PrintLine
+fi
+;;
+7|8)###RHEL 7/8 Check###
+pcsstate=$(find /usr/sbin  -type f -name  pcs)
+if [[ -z "$pcsstate" ]];
+        then
+        echo "Not a Cluster Node" > $LOG_DIR/clustercompare
+        PrintLine
+        echo -en "\e[1;33;40mCluster Status : \e[0m \n`cat $LOG_DIR/clustercompare` \n\n"
+        PrintLine
+        else
+        $pcsstate status  | grep -E 'Online|OFFLINE|standby' > $LOG_DIR/clustercompare
+        PrintLine
+        echo -en "\e[1;33;40mCluster Status : \e[0m \n`cat $LOG_DIR/clustercompare` \n\n"
+        PrintLine
+fi
+;;
+*)
+        echo "Not recognized OS please take backup manually."
+        ;;
+esac
+}
+######################################################################################################
+###MAC Address check####
+
+HWADDR_Check() #New version#
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|bond([0-9])/{print $1}'`
+do
+     echo " $i : `ifconfig $i | sort -u | grep -o -E '([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}'`"
+done > $LOG_DIR/hwaddrcompare
+;;
+7|8)###RHEL 7/8 Check###
+for i in `ifconfig | awk  '$1 ~ /eth([0-9]|[0-9]:[0-9])|team([0-9])/{print $1}' | cut -d : -f1`
+do
+     echo " $i : `ifconfig $i | sort -u | awk '/ether/ { print $2}'`"
+        done > $LOG_DIR/hwaddrcompare
+;;
+*)
+echo "Not recognized OS please take backup manually."
+ ;;
+esac
+}
+
+
+##################Sysctl parameters Validation##########################
+Rh_sysctl()
+{
+case $OSRelease in
+5|6)###RHEL 5/6 Check###
+       grep -v '^#' /etc/sysctl.conf | sed '/^$/d' | grep -v '^net' > $LOG_DIR/sysctlcnf
+       PrintLine
+       echo -en "\e[1;33;40msysctl parameters :- \e[0m \n `cat $LOG_DIR/sysctlcnf` \n\n"
+       PrintLine
+       ;;
+7|8)###RHEL 7/8 Check###
+       for i in `ls /etc/sysctl.d/`; do cd /etc/sysctl.d/; grep -v '^#' $i | sed '/^$/d'; done  > $LOG_DIR/sysctlcnf
+       PrintLine
+       echo -en "\e[1;33;40msysctl parameters :- \e[0m \n `cat $LOG_DIR/sysctlcnf` \n\n"
+       PrintLine
+       ;;
+*)
+       echo "Not recognized OS please take backup manually."
+       ;;
+esac
+}
+
+################Limits Validation#########
+limitscnf()
+{
+ #grep -v '^#' /etc/security/limits.conf | sed '/^$/d' > $LOG_DIR/limitscnf
+ for i in `ls  /etc/security/limits.d/`; do  cd /etc/security/limits.d/; grep -v '^#' $i | sed '/^$/d'; done > $LOG_DIR/limitscnf
+ PrintLine
+ echo -en "\e[1;33;40mLimits parameters :- \e[0m \n `cat $LOG_DIR/limitscnf` \n\n"
+ PrintLine
+ }
+
+#######Hardware Validation########
+Hardware_details()
+{
+ HW=`dmidecode | grep -i prod`
+ PrintLine
+ echo -en "\e[1;33;40mHardware Details :- \e[0m \n $HW \n\n"
+ PrintLine
+}
+
+timezone()
+{
+date | awk '{print $5}' > $LOG_DIR/tz
+}
+
+
+hostnamecheck()
+{
+hostname > $LOG_DIR/hostnamecheck
+}
+
+mailcheck()
+{
+sed -ie 's|\x1b\[[;0-9]*m||g' "$POST_DIR"/mail.txt
+mail -r no-reply@noreply.com -s "Post check $chq $(hostname)" gssd.java.unix.so@hcl.com < "$POST_DIR"/mail.txt
+}
+
+
+####Clean up of old Change details#####
+cleanup()
+{
+find /home/logs/ -name 'CHQ*' -mtime +10 > /tmp/logsummary
+if [ `cat /tmp/logsummary | wc -l` -ge 3 ]
+then
+echo -en "Doing Cleanup of following old dirs \n `cat /tmp/logsummary` \n"
+for i in `cat /tmp/logsummary`
+do
+rm -r $i
+done
+fi
+}
+
+
+#-------------------------------------------------------------------------------------------------------------------------------
+
+##################Addition of compare script in this script itself##############################################
+
+#-------------------------------------------------------------------------------------------------------------------------------
+compare()
+{
+
+PRE_DIR="/home/logs/`hostname`/pre/$chq"
+POST_DIR="/home/logs/`hostname`/post/$chq"
+
+postfixcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/postfixstatus $POST_DIR/postfixstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nPostfix : Pass  (`cat $POST_DIR/postfixstatus`)\n"
+else
+echo -en "\033[1;31m\nPostfix : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/postfixstatus $POST_DIR/postfixstatus
+fi
+}
+
+sendmailcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/sendmailstatus $POST_DIR/sendmailstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nSendmail : Pass  (`cat $POST_DIR/sendmailstatus`)\n"
+else
+echo -en "\033[1;31m\nSendmail : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/sendmailstatus $POST_DIR/sendmailstatus
+fi
+}
+
+
+puppetcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/puppetstatus $POST_DIR/puppetstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nPuppet : Pass  (`cat $POST_DIR/puppetstatus`)\n"
+else
+echo -en "\033[1;31m\nPuppet : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/puppetstatus $POST_DIR/puppetstatus
+fi
+}
+
+selinuxcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/selinuxstatus $POST_DIR/selinuxstatus 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nSelinux : Pass  (`cat $POST_DIR/selinuxstatus`)\n"
+else
+echo -en "\033[1;31m\nSelinux : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/selinuxstatus $POST_DIR/selinuxstatus
+fi
+}
+
+dfcompare()
+{
+countlocal1=`diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<" | wc -l`
+countlocal2=`diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | wc -l`
+        if [[ "$countlocal1" != 0 ]] && [[ "$countlocal2" = 0 ]] ; then
+                echo -en "\033[1;31m\nMounted filesystem check\t:\tFail \033[0m\n"
+                echo -en "\033[1;31m\n Following local mounts points are missing \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<"  | awk '{print $2"\t\t"$3}'
+        elif [[ "$countlocal1" = 0 ]] && [[ "$countlocal2" != 0 ]]; then
+                echo -en "\nMounted  filesystem check\t:\tPass\n"
+                echo -en "\033[1;32m\nThe following additional mount points are mounted after the activity \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | awk '{print $2"\t\t"$3}'
+        elif [[ "$countlocal1" != 0 ]] && [[ "$countlocal2" != 0 ]]; then
+                echo -en "\033[1;31m\nMounted filesystem check\t:\tFail \033[0m\n"
+                echo -en "\033[1;31m\n Following local mounts points are missing \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep "<"  | awk '{print $2"\t\t"$3}'
+                echo -en "\033[1;32m\nThe following additional mount points are mounted after the activity \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/dfcompare "$POST_DIR"/dfcompare | grep ">" | awk '{print $2"\t\t"$3}'
+        else
+                echo -en "\nMounted local filesystem check\t:\tPass\n"
+
+        fi
+}
+
+tzcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/tz "$POST_DIR"/tz 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nTimezone : Pass  (`cat $POST_DIR/tz`)\n"
+else
+echo -en "\033[1;31m\nTimezone : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/tz "$POST_DIR"/tz
+fi
+}
+
+hostnamecompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/hostnamecheck "$POST_DIR"/hostnamecheck 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nHostname : Pass  (`cat $POST_DIR/hostnamecheck`)\n"
+else
+echo -en "\033[1;31m\nHostname : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/hostnamecheck "$POST_DIR"/hostnamecheck
+fi
+}
+
+SOEIDIPcompare()
+{
+IPcount1=`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep "<" | wc -l`
+IPcount2=`diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep ">" | wc -l`
+if [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" = 0 ]] ; then
+                echo -en "\033[1;31m\nIP Address check\t:\tFail \033[0m\n"
+                echo -en "\033[1;31m\n Following IP address/interfaces are missing \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep "<"  
+        elif [[ "$IPcount1" = 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                echo -en "\nIP Address check\t:\tPass\n"
+                echo -en "\033[1;32m\nThe following IP address/interfaces are up after the activity \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep ">" 
+        elif [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                echo -en "\033[1;31m\nIP Adress check\t:\tFail \033[0m\n"
+                echo -en "\033[1;31m\n Following IP address/interfaces are missing \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep "<"  
+                echo -en "\033[1;32m\nThe following IP address/interfaces are up after the activity \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/SOEIDIP_Compare "$POST_DIR"/SOEIDIP_Compare | grep ">" 
+        else
+                echo -en "\nIP Address check\t:\tPass\n"
+
+        fi
+}
+
+################################################### Newly added 22/06/2021 ###########################
+Bond_Teamcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/Bond_Teamcompare "$POST_DIR"/Bond_Teamcompare 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nBond_Team Modes : Pass  \n`cat "$POST_DIR"/Bond_Teamcompare`\n"
+else
+echo -en "\033[1;31m\nBond_Team Modes : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/Bond_Teamcompare "$POST_DIR"/Bond_Teamcompare
+fi
+}
+################################################### Newly added 11/08/2021 ###########################
+cluster_compare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/clustercompare "$POST_DIR"/clustercompare 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nCluster Status: Pass  \n`cat "$POST_DIR"/clustercompare`\n"
+else
+echo -en "\033[1;31m\nCluster Status: Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/clustercompare "$POST_DIR"/clustercompare
+fi
+}
+##################################################### Newly added ####################################
+sysctlcnfcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/sysctlcnf "$POST_DIR"/sysctlcnf 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nSystemctl_parameters : Pass  \n`cat "$POST_DIR"/sysctlcnf`\n"
+else
+echo -en "\033[1;31m\nSystemctl_parameters : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/sysctlcnf "$POST_DIR"/sysctlcnf
+fi
+}
+
+limitscnfcompare()
+{
+diff -b --ignore-all-space "$PRE_DIR"/limitscnf "$POST_DIR"/limitscnf 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nLimits configuraton  : Pass  \n`cat "$POST_DIR"/limitscnf`\n"
+else
+echo -en "\033[1;31m\nLimits configuraton : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/limitscnf "$POST_DIR"/limitscnf
+fi
+}
+
+##########################################################################################################
+HWaddrcompare()
+{
+IPcount1=`diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep "<" | wc -l`
+IPcount2=`diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep ">" | wc -l`
+if [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" = 0 ]] ; then
+                echo -en "\033[1;31m\nMAC Address check\t:\tFail \033[0m\n"
+                echo -en "\033[1;31m\n Following interfaces are having different MAC address \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep "<"  
+        elif [[ "$IPcount1" = 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                echo -en "\nMAC Address check\t:\tPass\n"
+                echo -en "\033[1;32m\nThe following interfaces are up after the activity \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep ">" 
+        elif [[ "$IPcount1" != 0 ]] && [[ "$IPcount2" != 0 ]]; then
+                echo -en "\033[1;31m\nMAC Adress check\t:\tFail \033[0m\n"
+                echo -en "\033[1;31m\n Following interfaces are having different MAC address \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep "<"  
+                echo -en "\033[1;32m\nThe following interfaces are up after the activity \033[0m\n"
+                diff -b --ignore-all-space "$PRE_DIR"/hwaddrcompare "$POST_DIR"/hwaddrcompare | grep ">" 
+        else
+                echo -en "\nMAC Address check\t:\tPass\n"
+
+        fi
+}
+
+
+
+cpu()
+{
+diff -b --ignore-all-space "$PRE_DIR"/cpu "$POST_DIR"/cpu 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nCPUcheck : Pass  (`cat $POST_DIR/cpu`)\n"
+else
+echo -en "\033[1;31m\nCPUcheck : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/cpu "$POST_DIR"/cpu
+fi
+}
+
+memory()
+{
+diff -b --ignore-all-space "$PRE_DIR"/memory "$POST_DIR"/memory 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nmemorycheck : Pass  (`cat $POST_DIR/memory`G)\n"
+else
+echo -en "\033[1;31m\nmemorycheck : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/memory "$POST_DIR"/memory
+fi
+}
+
+###########Swap compare newly added##################
+swap()
+{
+diff -b --ignore-all-space "$PRE_DIR"/swap "$POST_DIR"/swap 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nswapcheck : Pass  (`cat $POST_DIR/swap`G)\n"
+else
+echo -en "\033[1;31m\nswapcheck : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/swap "$POST_DIR"/swap
+fi
+}
+######################################################
+
+kernel()
+{
+diff -b --ignore-all-space "$PRE_DIR"/kernelversion "$POST_DIR"/kernelversion 2>&1 > /dev/null
+if [ $? = 0 ]
+then
+echo -en "\nkernelversioncheck : Pass  (`cat $POST_DIR/kernelversion`)\n"
+else
+echo -en "\033[1;31m\nkernelversioncheck : Fail\033[0m\n"
+diff -by --ignore-all-space "$PRE_DIR"/kernelversion "$POST_DIR"/kernelversion
+fi
+}
+clear
+printf '\t%100s\n' | tr ' ' -;
+echo > "$POST_DIR"/mail.txt
+echo -en "\n\t\t\033[35m ########## Pre/Post comparison ############# \033[0m\n"
+printf '\t%100s\n' | tr ' ' -;
+dfcompare | tee -a "$POST_DIR"/mail.txt
+postfixcompare | tee -a "$POST_DIR"/mail.txt
+sendmailcompare | tee -a "$POST_DIR"/mail.txt
+puppetcompare | tee -a "$POST_DIR"/mail.txt
+selinuxcompare | tee -a "$POST_DIR"/mail.txt
+tzcompare | tee -a "$POST_DIR"/mail.txt
+hostnamecompare | tee -a "$POST_DIR"/mail.txt
+cpu | tee -a "$POST_DIR"/mail.txt
+memory | tee -a "$POST_DIR"/mail.txt
+swap | tee -a "$POST_DIR"/mail.txt
+kernel | tee -a "$POST_DIR"/mail.txt
+SOEIDIPcompare | tee -a "$POST_DIR"/mail.txt
+HWaddrcompare | tee -a "$POST_DIR"/mail.txt
+sysctlcnfcompare | tee -a "$POST_DIR"/mail.txt
+limitscnfcompare | tee -a "$POST_DIR"/mail.txt
+Bond_Teamcompare | tee -a "$POST_DIR"/mail.txt
+cluster_compare | tee -a "$POST_DIR"/mail.txt
+#mailcheck
+}
+#---------------------------------------------------------------------------------------------------------------------
+
+#####################################Compare script end########################################################
+
+#---------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+###### Function is used to print the useage of script ######
+scriptUsage(){
+        clear;
+        echo
+        printf '\t%80s\n' | tr ' ' -
+        echo -en "\n\t\t * * * * Host Pre/Post migration check  * * * * \t\n";
+        printf '\t%80s\n' | tr ' ' -
+        echo -en "\n";
+        echo -en "\nThis tool will collect information about host deatils before/after migration"
+        echo
+        echo -en "\nUsage: $0 -o pre/post \n"
+        printf '%30s\n' | tr ' ' -
+        echo -en "\n\t-o   - Used for option";
+        echo -en "\n\tpre  - Before migration";
+        echo -en "\n\tpost - After migration\n";
+        printf '%30s\n' | tr ' ' -
+}
+
+################ Input validation #########
+if [ $# -le 1  ]
+then
+scriptUsage
+echo -en "\nKindly provide \"pre\/post\" keyword and re-execute the script.\n";
+exit 1;
+else
+        clear;
+        option=$1;
+        value=$2;
+        if [ "$option" != "-o" ]
+        then
+                echo -en "\nPlease check the option \"$option\" provided and re-execute the script.\n";
+                exit 1;
+        elif [ "$value" == "pre"  ] ||  [ "$value" == "post"  ]
+        then
+                #################################################################
+                #                       Main Function                           #
+                #################################################################
+                clear
+                printf '\t%80s\n' | tr ' ' -;
+                echo -en "\t\t\033[35m ########## Executing System Checks ############# \033[0m\n"
+                printf '\t%80s\n' | tr ' ' -;
+                echo -en "\e[30;35m Please enter Change no : \e[0m"
+                read chq
+if [ -z $chq ]
+then
+echo -en "\e[31m Please provide the change no to proceed further :\e[0m\n"
+echo -en "\e[30;35m Please enter Change no : \e[0m"
+read chq
+       if [ -z $chq ]
+then
+ echo -en "\e[31m Change no is not provided, Please rerun the script with change no : \e[0m\n"
+ exit 1 ;
+fi
+fi
+LOGDIR=/home/logs/$chq/before_bounce_scan/`hostname`-`date +"%Y%m%d:%H:%M"`
+mkdir -p $LOGDIR
+                if [ "$value" == "pre" ]
+                then
+                       LOG_DIR="/home/logs/`hostname`/pre/$chq"
+                       mkdir -p "$LOG_DIR";
+                        OSversion
+                        dfcheck
+                        Hardware_details
+Services-check
+                        selinux
+timezone
+hostnamecheck
+SOEID_IP_Check
+HWADDR_Check
+                        OSConfigfielsbackup
+                        Rh_sysctl
+                        limitscnf
+Bond_Team_check
+Cluster_check
+                        echo -en "\nYou can find pre logs under : $LOG_DIR \n";
+sleep 2;
+echo -en "\nPlease run below commands on segotl0836\n"
+echo -en "\n\e[31m scp -pr $user@`hostname -f`:$LOGDIR /tmp/Pre_Logs/  \e[0m \n"
+                else
+                       LOG_DIR="/home/logs/`hostname`/post/$chq"
+                       mkdir -p "$LOG_DIR";
+                        OSversion
+                        dfcheck
+                        Hardware_details
+Services-check
+                        selinux
+timezone
+hostnamecheck
+SOEID_IP_Check
+HWADDR_Check
+                        OSConfigfielsbackup
+                        Rh_sysctl
+                        limitscnf
+Bond_Team_check
+Cluster_check
+                        sleep 2;
+                        compare
+                        echo -en "\nYou can find post logs under : $LOG_DIR \n";
+
+cleanup
+                fi
+         fi
+fi
+root@segotl0836# ll
+total 1193804
+-rwxrwxrwx.  1 a330505 cs_unix_stdgroup   6513104 Aug  6  2020 8.1.9.0-TIV-TSMORA-LinuxX64.bin
+drwx------. 10 root    root                  4096 Nov  4 16:36 a231913
+-rwxrwxrwx.  1 a346317 cs_unix_stdgroup     54305 Sep 30  2020 actionsite.afxm
+-rwxrwxrwx.  1 root    root              10595687 Apr 26  2024 catalina.out
+-rwxrwxrwx.  1   61305 cs_unix_stdgroup     24696 Jun 21  2021 check.sh
+-rwx--x--x.  1   61305 cs_unix_stdgroup     29513 Aug 11  2021 check_v2.sh
+-rw-r--r--.  1   61305 cs_unix_stdgroup  38076490 Nov 20  2019 delldset_v2.2.125_x64_A01.bin
+drwxr-xr-x.  3 root    root                   119 Dec  1 18:22 dinesh
+-rwxrwxrwx.  1 root    root              20408320 Aug 14  2020 emcgrab_Linux_v4.8.3.tar
+drwxrwxrwx.  2 root    root                   125 May  3  2023 fireeye
+drwxrwxr-x.  8 a381057 cs_unix_stdgroup        99 Nov 14 10:40 GRC_AVM
+drwx------.  2 root    root                     6 Jan  3  2020 lost+found
+drwxr-xr-x.  2 root    root                    58 May 12  2023 mdatp
+-rwxrwxrwx.  1 v071180 cs_unix_stdgroup 179730114 Apr  4  2024 NetApp_Snap_Creator_Framework4.3.3P9-Linux64.tar.gz
+drwxr-xr-x.  2 root    root                     6 Aug 21  2020 openshiftsosreports
+lrwxrwxrwx.  1 root    root                    21 Jan 25  2021 oracle-clinet -> /oracle/oracle_client
+-rwxrwxrwx.  1 root    root              37069664 Jun 23  2020 scAgent4.3.2.tar.gz
+-rwxrwxrwx.  1 root    root               3034619 Aug 28  2019 SJ_snowagent-5.2.0-1.x86_64.rpm
+-rwxrwxrwx.  1 a440611 cs_unix_stdgroup 926885546 Jan 18  2024 SP_CLIENT_8.1.20_LIN86_ML.tar.gz
+drwxr-xr-x.  2 root    root                   242 Oct 24  2023 TSMpkg
+drwxr-xr-x.  3 root    root                    21 Jan 25  2021 WebScripts
+root@segotl0836# 
